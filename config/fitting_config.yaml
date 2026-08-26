@@ -1,0 +1,336 @@
+# Analysis constants
+constants:
+  fixed_uncertainty: 0.1 # fixed uncertainty for fitting
+  # TODO: implement these as back ups
+  nsteps: 20000
+  nwalkers: 128
+  bin_size: 64
+  radii_list: [5, 10, 15, 20, 30, 50, 75, 100, 150, 200]
+
+# Range scaling options
+# Supports two modes:
+#   1. "kpc" (default): Ranges defined in physical kpc, optionally scaled with redshift
+#   2. "r200": Ranges defined as fractions of R200 virial radius
+#
+# R200 scaling makes analysis comparable across halos of different masses
+# Example: r_range: [0.002, 0.015] means 0.2% to 1.5% of R200
+range_scaling:
+  enabled: true           # Global toggle for range scaling
+  units: "kpc"            # "kpc" or "r200" - units for range definitions
+  # Redshift scaling (only applies when units="kpc")
+  mode: "linear"          # Scaling mode: "linear" (a=1/(1+z)), "sqrt", "log", or "none"
+  min_scale: 0.1          # Minimum scale factor (prevents too-small ranges at high-z)
+  max_scale: 1.0          # Maximum scale factor (no scaling beyond z=0)
+
+# Plotting configuration
+plotting:
+  # Default settings (applied to all plots unless overridden)
+  default:
+    dpi: 200
+    cmap: 'viridis'
+    percentiles: [1, 99]
+    linewidth: 2.0
+    linewidth_bold: 3.0
+    markersize: 5
+    alpha_fill: 0.3
+    fontsize_title: 14
+    fontsize_label: 12
+    fontsize_tick: 10
+    grid_alpha: 0.3
+    # Page width reference (A4 with standard 1" margins).
+    # Run \the\textwidth in LaTeX to get the exact value for your template.
+    # Figsize width should match how the figure is included in the report:
+    #   full width  → 6.3"  (use width=\textwidth in LaTeX)
+    #   two-thirds  → 4.2"  (use width=0.67\textwidth)
+    #   half width  → 3.15" (use width=0.49\textwidth, for side-by-side pairs)
+    page_width_in: 6.27
+
+  # 2D comparison plots (data, model, residual panels)
+  # Three side-by-side colormaps — needs full width and enough height for colorbars
+  comparison_2d:
+    figsize: [18, 7]         # three-panel side-by-side (Data | Model | Residual)
+    max_residual: 100.0     # Maximum absolute residual (clips extreme values)
+    residual_cmap: 'RdBu_r' # Colormap for residual panel
+    log_colorbar: true      # Use log scale for density colorbars
+    log_R: true             # Use log scale for radial axis
+    log_z: true             # Use log scale for vertical axis
+    dpi: 150                # Override default DPI if needed
+
+  # 1D density profile plots (main + residual sub-panel)
+  # Sized for full-width inclusion; reduce to 4.2 if using width=0.67\textwidth in LaTeX
+  profile_1d:
+    figsize: [6.27, 5.0]     # full page width
+    log_scale: true         # Use log-log scale
+    show_uncertainty: true  # Show 1-sigma bands for best model
+    dpi: 200                # Higher resolution for profile plots
+
+  # Corner plots (MCMC posteriors) — detail/appendix use, not constrained to page width
+  corner:
+    dpi: 200                # Resolution for corner plots
+    smooth: 1.0             # Smoothing factor for 2D histograms
+    bins: 30                # Number of bins per dimension
+    quantiles: [0.16, 0.5, 0.84]  # Quantiles to show (16th, 50th, 84th percentiles)
+
+  # Single-panel evolution plots
+  # Change width to 4.2 if including at width=0.67\textwidth, 3.15 for side-by-side pairs
+  mass_evolution:
+    figsize: [6.27, 4.5]     # full page width
+    cmap: 'turbo_r'
+    markersize: 4
+
+  ratio_evolution:
+    figsize: [6.27, 4.5]     # full page width
+    scatter_size: 60
+    linewidth: 1.0
+    cmap: 'turbo_r'
+
+  component_evolution:
+    figsize: [6.27, 4.5]     # full page width
+
+  colors:
+    structural:
+      bulge: '#4C72B0'
+      disk: '#DD8452'
+      halo: '#55A868'
+      total: '#C44E52'
+    component_type:
+      star: '#1f77b4'
+      gas: '#2ca02c'
+      dm: '#ff7f0e'
+      total: '#000000'
+
+# Fitting configuration
+star:
+  bulge:
+    enabled: True
+    r_range: [0.5, 3]  # Range in kpc (when units="kpc") or R200 fractions (when units="r200")
+    # r_range: [0.002, 0.015]  # Example R200-scaled range: 0.2% to 1.5% of R200
+    range_scaling:     # Override global settings (optional)
+      units: "kpc"     # "kpc" or "r200" - override global units for this component
+      mode: "linear"   # Use linear scaling: r(z) = r_z0/(1+z) (only for units="kpc")
+      min_scale: 0.1
+      max_scale: 1.0
+    bounds:
+      log10_rho0: [5.0, 12.0]
+      log10_rs: [-1.0, 0.3]
+      log10_rc: [-1.0, 0.0]
+      alpha: [0.0, 6.0]
+      beta: [3.0, 7.0]
+      gamma: [0.1, 3.0]
+      log_sigma: [-6, 2]
+      r_core: [0.1, 1.5]
+      r_cutoff: [0.5, 2.0]
+    p0:
+      log10_rho0: 9.0
+      log10_rs: 0.0
+      alpha: 1.0
+      beta: 4.0
+      gamma: 1.0
+      log10_rc: -0.3
+      r_core: 0.3
+      r_cutoff: 1.0
+    models:
+      - Hernquist
+      - Two-Power
+      - Exponential
+      - Exp-Cutoff
+      - Cored-bulge
+      - Three-Power
+      - Core-Only
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #gaussian
+      mean: 0.5
+  disk:
+    enabled: True
+    R_range: [3.0, 30.0]  # Range at z=0 in kpc
+    z_max: 7.0            # Max height at z=0 in kpc
+    range_scaling:
+      mode: "linear"      # Disk also scales with (1+z)
+      min_scale: 0.15     # Don't go below 15% of z=0 size
+      max_scale: 1.0
+    bounds:
+      log10_rho01: [3.0, 10.0]
+      log10_rho02: [1.0, 8.0]
+      R_d1: [0.1, 10.0]
+      R_d2: [5.0, 50.0]
+      z_0: [0.1, 3.0]
+      log10_z0: [-2.0, 0.7]
+      log_sigma: [-6, 2]
+      A: [-10.0, 10.0]
+      B: [-10.0, 10.0]
+    p0:
+      log10_rho01: 8.0
+      log10_rho02: 5.0
+      R_d1: 3.0
+      R_d2: 15.0
+      z_0: 1.0
+      log10_z0: 0.0
+      A: 0.25
+      B: 1.0
+    models:
+      - Single-Exponential
+      - Double-Exponential
+      - Single-Disk-Flaring
+      - Double-Disk-Flaring
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+  bulge_subtracted_disk:
+    enabled: False
+    r_range: [0.6, 3.0]
+    bounds:
+      log10_rho0: [5.0, 11.0]
+      log10_rs: [-1.0, 0.3]
+      log10_rc: [-1.0, 0.0]
+      alpha: [0.0, 4.0]
+      beta: [3.0, 7.0]
+      gamma: [0.1, 3.0]
+      log_sigma: [-6, 1]
+      r_core: [0.1, 1.5]
+      r_cutoff: [0.5, 2.0]
+    p0:
+      log10_rho0: 9.0
+      log10_rs: 0.0
+      alpha: 1.0
+      beta: 4.0
+      gamma: 1.0
+      log10_rc: -0.3
+      r_core: 0.3
+      r_cutoff: 1.0
+    models:
+      - Hernquist
+      - Two-Power
+      - Exponential
+      - Exp-Cutoff
+      - Cored-bulge
+      - Three-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #gaussian
+      mean: 0.5
+  halo:
+    enabled: True
+    r_range: [30.0, 250.0]  # Range at z=0 in kpc
+    range_scaling:
+      mode: "linear"        # Halo virial radius scales with (1+z)
+      min_scale: 0.1
+      max_scale: 1.0
+    bounds:
+      log10_rho0: [0.0, 10.0]
+      log10_rs: [0.0, 2.5]
+      alpha: [0.0, 5.0]
+      beta: [1.0, 7.0]
+      log_sigma: [-10, 2]
+    p0:
+      log10_rho0: 6.0
+      log10_rs: 1.5
+      alpha: 1.0
+      beta: 3
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #inverse_radius
+      power: 1.0
+      r_scale: 50
+
+gas:
+  disk:
+    enabled: True
+    R_range: [1.0, 30.0]  # Range at z=0 in kpc
+    z_max: 7.0            # Max height at z=0 in kpc
+    range_scaling:
+      mode: "linear"
+      min_scale: 0.15
+      max_scale: 1.0
+    bounds:
+      log10_rho01: [3.0, 8.0]
+      log10_rho02: [0.0, 7.0]
+      R_d1: [0.1, 10.0]
+      R_d2: [5.0, 30.0]
+      z_0: [0.1, 3.0]
+      log10_z0: [-2.0, 0.7]
+      log_sigma: [-6, 1]
+      A: [-10.0, 10.0]
+      B: [-10.0, 10.0]
+    p0:
+      log10_rho01: 7.0
+      log10_rho02: 5.0
+      R_d1: 3.0
+      R_d2: 15.0
+      z_0: 1.0
+      log10_z0: 0.0
+      A: 0.25
+      B: 1.0
+    models:
+      - Single-Exponential
+      - Double-Exponential
+      - Single-Disk-Flaring
+      - Double-Disk-Flaring
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+  halo:
+    enabled: True
+    r_range: [25.0, 250.0]  # Range at z=0 in kpc
+    range_scaling:
+      mode: "linear"
+      min_scale: 0.1
+      max_scale: 1.0
+    bounds:
+      log10_rho0: [1.0, 6.0]
+      log10_rs: [0.5, 3.0]
+      alpha: [0.0, 5.0]
+      beta: [0.0, 8.0]
+      log_sigma: [-6, 1]
+    p0:
+      log10_rho0: 4.0
+      log10_rs: 1.5
+      alpha: 1.0
+      beta: 3.0
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #inverse_radius
+      power: 1.0
+      r_scale: 70
+
+dm:
+  halo:
+    enabled: True
+    r_range: [0.3, 250.0]  # Range at z=0 in kpc
+    range_scaling:
+      mode: "linear"
+      min_scale: 0.1
+      max_scale: 1.0
+    bounds:
+      log10_rho0: [3.0, 10.0]
+      log10_rs: [0.5, 3]
+      alpha: [0.0, 4.0]
+      beta: [1, 6.0]
+      log_sigma: [-6, 1]
+    p0:
+      log10_rho0: 6
+      log10_rs: 1.4
+      alpha: 1.0
+      beta: 3.0
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #

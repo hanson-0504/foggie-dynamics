@@ -1,0 +1,384 @@
+# =============================================================================
+# R200-SCALED FITTING CONFIGURATION
+# =============================================================================
+# This config defines all fitting ranges as fractions of R200 (virial radius).
+# This makes analysis comparable across halos of different masses.
+#
+# To use: copy this file to fitting_config.yaml or load it explicitly:
+#   config = load_config('fitting_config_r200.yaml')
+#
+# Conversion reference (for R200 = 200 kpc):
+#   0.001 R200 = 0.2 kpc
+#   0.01 R200 = 2 kpc
+#   0.1 R200 = 20 kpc
+#   1.0 R200 = 200 kpc
+# =============================================================================
+
+# Analysis constants
+constants:
+  fixed_uncertainty: 0.1
+  nsteps: 20000
+  nwalkers: 128
+  bin_size: 64
+  radii_list: [0.01, 0.02, 0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1.0]  # R200 fractions
+
+# Global R200 scaling - all ranges are in R200 fractions
+range_scaling:
+  enabled: true
+  units: "r200"  # All ranges below are R200 fractions
+
+# Plotting configuration
+plotting:
+  # Default settings (applied to all plots unless overridden)
+  default:
+    dpi: 200
+    cmap: 'viridis'
+    percentiles: [1, 99]
+    linewidth: 2.0
+    linewidth_bold: 3.0
+    markersize: 5
+    alpha_fill: 0.3
+    fontsize_title: 14
+    fontsize_label: 12
+    fontsize_tick: 10
+    # Page width reference (A4 with standard 1" margins).
+    # Run \the\textwidth in LaTeX to get the exact value for your template.
+    # Figsize width should match how the figure is included in the report:
+    #   full width  → 6.3"  (use width=\textwidth in LaTeX)
+    #   two-thirds  → 4.2"  (use width=0.67\textwidth)
+    #   half width  → 3.15" (use width=0.49\textwidth, for side-by-side pairs)
+    page_width_in: 6.27
+
+  # 2D comparison plots (data, model, residual panels)
+  # Three side-by-side colormaps — needs full width and enough height for colorbars
+  comparison_2d:
+    figsize: [18, 7]         # three-panel side-by-side (Data | Model | Residual)
+    max_residual: 100.0     # Maximum absolute residual (clips extreme values)
+    residual_cmap: 'RdBu_r' # Colormap for residual panel
+    log_colorbar: true      # Use log scale for density colorbars
+    log_R: true             # Use log scale for radial axis
+    log_z: true             # Use log scale for vertical axis
+    dpi: 150                # Override default DPI if needed
+
+  # 1D density profile plots (main + residual sub-panel)
+  # Sized for full-width inclusion; reduce to 4.2 if using width=0.67\textwidth in LaTeX
+  profile_1d:
+    figsize: [6.27, 5.0]     # full page width
+    log_scale: true         # Use log-log scale
+    show_uncertainty: true  # Show 1-sigma bands for best model
+    dpi: 200                # Higher resolution for profile plots
+
+  # Corner plots (MCMC posteriors) — detail/appendix use, not constrained to page width
+  corner:
+    dpi: 200                # Resolution for corner plots
+    smooth: 1.0             # Smoothing factor for 2D histograms
+    bins: 30                # Number of bins per dimension
+    quantiles: [0.16, 0.5, 0.84]  # Quantiles to show (16th, 50th, 84th percentiles)
+
+  # Single-panel evolution plots
+  # Change width to 4.2 if including at width=0.67\textwidth, 3.15 for side-by-side pairs
+  mass_evolution:
+    figsize: [6.27, 4.5]     # full page width
+    cmap: 'turbo_r'
+    markersize: 4
+
+  ratio_evolution:
+    figsize: [6.27, 4.5]     # full page width
+    scatter_size: 60
+    linewidth: 1.0
+    cmap: 'turbo_r'
+
+  component_evolution:
+    figsize: [6.27, 4.5]     # full page width
+
+  colors:
+    structural:
+      bulge: '#4C72B0'
+      disk: '#DD8452'
+      halo: '#55A868'
+      total: '#C44E52'
+    component_type:
+      star: '#1f77b4'
+      gas: '#2ca02c'
+      dm: '#ff7f0e'
+      total: '#000000'
+
+  projection:
+    cmap: 'plasma'  # or 'arbre', 'dusk', 'plasma', etc.
+    width_factor: 3.0
+    r200_circle:
+      linewidth: 2
+      linestyle: '--'
+      color: 'red'
+    radius_markers:
+      - factor: 0.5
+        color: 'orange'
+        linestyle: ':'
+        linewidth: 1
+        alpha: 0.6
+        label: '0.5 R$_{200}$'
+      - factor: 1.5
+        color: 'cyan'
+        linestyle: ':'
+        linewidth: 1
+        alpha: 0.6
+        label: '1.5 R$_{200}$'
+    legend:
+      loc: 'upper right'
+      fontsize: 10
+      framealpha: 0.8
+    title_fontsize: 14
+    # Per-component overrides (optional)
+    cmaps:
+      star: 'viridis'
+      gas: 'arbre'
+      dm: 'plasma'
+
+# =============================================================================
+# STELLAR COMPONENT - R200 scaled ranges
+# =============================================================================
+star:
+  bulge:
+    enabled: True
+    # Inner stellar bulge: 0.25% - 1.5% of R200
+    # For R200=200 kpc: 0.5 - 3.0 kpc
+    r_range: [0.0025, 0.015]
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho0: [5.0, 12.0]
+      log10_rs: [-1.0, 0.3]
+      log10_rc: [-1.0, 0.0]
+      alpha: [0.0, 6.0]
+      beta: [3.0, 7.0]
+      gamma: [0.1, 3.0]
+      log_sigma: [-6, 2]
+      r_core: [0.1, 1.5]
+      r_cutoff: [0.5, 2.0]
+    p0:
+      log10_rho0: 9.0
+      log10_rs: 0.0
+      alpha: 1.0
+      beta: 4.0
+      gamma: 1.0
+      log10_rc: -0.3
+      r_core: 0.3
+      r_cutoff: 1.0
+    models:
+      - Hernquist
+      - Two-Power
+      - Exponential
+      - Exp-Cutoff
+      - Cored-bulge
+      - Three-Power
+      - Core-Only
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #gaussian
+      mean: 0.5
+
+  disk:
+    enabled: True
+    # Stellar disk: 1.5% - 15% of R200 (radial), 3.5% R200 max height
+    # For R200=200 kpc: R=3-30 kpc, z_max=7 kpc
+    R_range: [0.015, 0.15]
+    z_max: 0.035
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho01: [3.0, 10.0]
+      log10_rho02: [1.0, 8.0]
+      R_d1: [0.1, 10.0]
+      R_d2: [5.0, 50.0]
+      z_0: [0.01, 3.0]
+      log10_z0: [-2.0, 0.7]
+      log_sigma: [-6, 2]
+      A: [-10.0, 10.0]
+      B: [-10.0, 10.0]
+    p0:
+      log10_rho01: 8.0
+      log10_rho02: 5.0
+      R_d1: 3.0
+      R_d2: 15.0
+      z_0: 1.0
+      log10_z0: 0.0
+      A: 0.25
+      B: 1.0
+    models:
+      - Single-Exponential
+      - Double-Exponential
+      - Single-Disk-Flaring
+      - Double-Disk-Flaring
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+
+  bulge_subtracted_disk:
+    enabled: False
+    # For disk-subtracted bulge fitting
+    r_range: [0.003, 0.015]  # 0.3% - 1.5% R200
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho0: [5.0, 11.0]
+      log10_rs: [-1.0, 0.3]
+      log10_rc: [-1.0, 0.0]
+      alpha: [0.0, 4.0]
+      beta: [3.0, 7.0]
+      gamma: [0.1, 3.0]
+      log_sigma: [-6, 1]
+      r_core: [0.1, 1.5]
+      r_cutoff: [0.5, 2.0]
+    p0:
+      log10_rho0: 9.0
+      log10_rs: 0.0
+      alpha: 1.0
+      beta: 4.0
+      gamma: 1.0
+      log10_rc: -0.3
+      r_core: 0.3
+      r_cutoff: 1.0
+    models:
+      - Hernquist
+      - Two-Power
+      - Exponential
+      - Exp-Cutoff
+      - Cored-bulge
+      - Three-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #gaussian
+      mean: 0.5
+
+  halo:
+    enabled: True
+    # Stellar halo: 15% - 125% of R200
+    # For R200=200 kpc: 30-250 kpc
+    r_range: [0.15, 1.25]
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho0: [0.0, 10.0]
+      log10_rs: [0.0, 2.5]
+      alpha: [0.0, 5.0]
+      beta: [1.0, 7.0]
+      log_sigma: [-10, 2]
+    p0:
+      log10_rho0: 6.0
+      log10_rs: 1.5
+      alpha: 1.0
+      beta: 3
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #inverse_radius
+      power: 1.0
+      r_scale: 50
+
+# =============================================================================
+# GAS COMPONENT - R200 scaled ranges
+# =============================================================================
+gas:
+  disk:
+    enabled: True
+    # Gas disk: 0.5% - 15% of R200 (extends closer to center than stars)
+    # For R200=200 kpc: R=1-30 kpc, z_max=7 kpc
+    R_range: [0.005, 0.15]
+    z_max: 0.035
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho01: [3.0, 10.0]
+      log10_rho02: [0.0, 7.0]
+      R_d1: [0.1, 10.0]
+      R_d2: [5.0, 30.0]
+      z_0: [0.01, 3.0]
+      log10_z0: [-2.0, 0.7]
+      log_sigma: [-6, 1]
+      A: [-10.0, 10.0]
+      B: [-10.0, 10.0]
+    p0:
+      log10_rho01: 7.0
+      log10_rho02: 5.0
+      R_d1: 3.0
+      R_d2: 15.0
+      z_0: 1.0
+      log10_z0: 0.0
+      A: 0.25
+      B: 1.0
+    models:
+      - Single-Exponential
+      - Double-Exponential
+      - Single-Disk-Flaring
+      - Double-Disk-Flaring
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+
+  halo:
+    enabled: True
+    # Gas halo (CGM): 12.5% - 125% of R200
+    # For R200=200 kpc: 25-250 kpc
+    r_range: [0.125, 1.25]
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho0: [1.0, 6.0]
+      log10_rs: [0.5, 3.0]
+      alpha: [0.0, 5.0]
+      beta: [0.0, 8.0]
+      log_sigma: [-6, 1]
+    p0:
+      log10_rho0: 4.0
+      log10_rs: 1.5
+      alpha: 1.0
+      beta: 3.0
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #inverse_radius
+      power: 1.0
+      r_scale: 70
+
+# =============================================================================
+# DARK MATTER COMPONENT - R200 scaled ranges
+# =============================================================================
+dm:
+  halo:
+    enabled: True
+    # DM halo: 0.5% - 125% of R200 (extends to very small radii)
+    # For R200=200 kpc: 0.3-250 kpc
+    r_range: [0.005, 1.25]
+    range_scaling:
+      units: "r200"
+    bounds:
+      log10_rho0: [2.0, 10.0]
+      log10_rs: [-2, 3]
+      alpha: [0.0, 4.0]
+      beta: [0.0, 6.0]
+      log_sigma: [-6, 1]
+    p0:
+      log10_rho0: 6
+      log10_rs: 1.4
+      alpha: 1.0
+      beta: 3.0
+    models:
+      - NFW
+      - Two-Power
+    fitting:
+      nwalkers: 128
+      nsteps: 50000
+    weights:
+      type: #
