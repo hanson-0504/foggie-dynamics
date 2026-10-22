@@ -40,8 +40,8 @@ def main():
     parser.add_argument('--names', nargs='+', default=['Hurricane', 'Cyclone', 'Blizzard', 'Squall', 'Maelstrom', 'Tempest'])
     parser.add_argument('--components', nargs='+', default=["star", "gas", "dm"])
     parser.add_argument('--regions', nargs='+', default=['bulge', 'disk', 'halo'])
-    parser.add_argument('--experiment', default=None, type=str)
-    parser.add_argument('--config', default="fitting_config.yaml")
+    parser.add_argument('--experiment', default='r200_scaling', type=str)
+    parser.add_argument('--config', default="fitting_config_r200.yaml")
     args = parser.parse_args()
 
     halos = args.halos
@@ -124,7 +124,8 @@ def main():
                                 best_model_name=best_model,
                                 component_name=region,
                                 save_path=f'{plot_path}/{comp}_{region}_fit.png',
-                                model_evaluators=evaluators
+                                model_evaluators=evaluators,
+                                config=config
                             )
                             plt.close()
                         except Exception as e:
@@ -169,7 +170,8 @@ def main():
                         profile=comp_profile,
                         component_type=comp,
                         r_range=(0.8, max(comp_profile.r_1d)),
-                        save_path=f'{plot_path}/total_{comp}_fit.png'
+                        save_path=f'{plot_path}/total_{comp}_fit.png',
+                        config=config
                     )
                     plt.close()
                 except Exception as e:

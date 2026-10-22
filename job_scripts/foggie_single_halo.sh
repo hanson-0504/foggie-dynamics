@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=foggie_single_halo
+#SBATCH --job-name=Tempest_analysis
 #SBATCH --output=job_output/job_%j.out
 #SBATCH --error=job_output/job_%j.err
-#SBATCH --time=168:00:00
+#SBATCH --time=120:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=7
-#SBATCH --mem=160G
+#SBATCH --mem=100G
 ##SBATCH --array=1-6
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=s2153833@ed.ac.uk
@@ -32,7 +32,7 @@ export NUMEXPR_NUM_THREADS=1
 # ---- Working directory (code lives in $HOME) ----
 cd /home/shanson/foggie-dynamics || exit 1
 
-HALO=5036
+HALO=8508
 
 # ---- Clean up stale evolution file before rerun ----
 RESULTS_DIR="/cephfs/shanson/FOGGIE/results/r200_scaling/halo_$(printf '%06d' $HALO)"
@@ -58,11 +58,11 @@ python code/foggie_analysis.py \
     --nsteps 100000 \
     --config config/fitting_config_r200.yaml \
     --experiment r200_scaling \
-    --make_projections \
-    --snapshots 0012 0013 0014 0015 0016 0017 \
-    0018 0019 0020 0021 0022 0023 0024 0025 0026 \
-    0027 0028 0029 0030 0031 0032 0033 0034 0037 \
-    0038 0039 0040 0041 0042 # skipping 0035/0036
+    --make_projections 
+    #--snapshots 0012 0013 0014 0015 0016 0017 \
+    #0018 0019 0020 0021 0022 0023 0024 0025 0026 \
+    #0027 0028 0029 0030 0031 0032 0033 0034 0037 \
+    #0038 0039 0040 0041 # skipping 0035/0036/0042
 
 
 echo "SUCCESS: All components completed for $HALO"

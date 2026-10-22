@@ -2,7 +2,7 @@
 #SBATCH --job-name=foggie_gas_sim
 #SBATCH --output=job_output/gas_sim/job_%j.out
 #SBATCH --error=job_output/gas_sim/job_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -35,7 +35,7 @@ HALO=5036
 
 # ---- Clean up stale evolution file before rerun ----
 RESULTS_DIR="/cephfs/shanson/FOGGIE/results/gas_sim/halo_005036"
-rm -f "${RESULTS_DIR}/evolution_time_series.h5"
+#rm -f "${RESULTS_DIR}/evolution_time_series.h5"
 
 # ---- Debug info ----
 echo "Job ID: $SLURM_JOB_ID"
@@ -60,6 +60,7 @@ python code/foggie_analysis.py \
     --make_projections \
     --nwalkers 200 \
     --nsteps 100000 \
-    --center_find_method shrinking_sphere_global
+    --center_find_method shrinking_sphere_global \
+    --start_snapshot 28
 
 echo "SUCCESS: All components completed for $HALO"

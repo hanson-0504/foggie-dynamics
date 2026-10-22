@@ -7,8 +7,8 @@
 #SBATCH --time=05:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=10G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=s2153833@ed.ac.uk
 
@@ -26,3 +26,7 @@ echo "Job ID: $SLURM_JOB_ID"
 python code/plot_code.py \
     --experiment r200_scaling \
     --config fitting_config_r200.yaml
+    --halos halo_008508 \
+    --names Tempest
+    #--components dm \
+    #--regions halo

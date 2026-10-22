@@ -22,6 +22,8 @@ from .workflow import DensityProfile
 
 matplotlib.use("Agg")
 
+plt.style.use('/home/shanson/foggie-dynamics/config/paper.mplstyle')
+
 
 if TYPE_CHECKING:
     from .workflow import FittingResult
@@ -75,10 +77,9 @@ def get_component_colors(config: Dict, color_type: str = "structural") -> Dict[s
 def apply_axis_style(ax, config: Dict, plot_type: str = "default"):
     """Apply consistent styling to axes (fontsize, grid)."""
     plt_cfg = get_plot_config(config, plot_type)
-    ax.xaxis.label.set_fontsize(plt_cfg.get("fontsize_label", 12))
-    ax.yaxis.label.set_fontsize(plt_cfg.get("fontsize_label", 12))
-    ax.tick_params(axis='both', labelsize=plt_cfg.get("fontsize_tick", 10))
-    ax.grid(True, alpha=plt_cfg.get("grid_alpha", 0.3))
+    ax.xaxis.label.set_fontsize(plt_cfg.get("fontsize_label", 10))
+    ax.yaxis.label.set_fontsize(plt_cfg.get("fontsize_label", 10))
+    ax.tick_params(axis='both', labelsize=plt_cfg.get("fontsize_tick", 9))
 
 
 def plot_2d_density_with_marginals(
@@ -182,7 +183,7 @@ def plot_2d_density_with_marginals(
         ax_top.set_title(title, fontsize=14)
 
     ax_top.tick_params(labelbottom=False)
-    ax_top.set_ylabel("Total ρ(R)")
+    ax_top.set_ylabel(r"Total $\rho(R)$")
 
     # Right histogram (height)
     ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main)
@@ -200,7 +201,7 @@ def plot_2d_density_with_marginals(
         ax_right.set_yscale("log")
 
     ax_right.tick_params(labelleft=False)
-    ax_right.set_xlabel("Total ρ(z)", fontsize=12)
+    ax_right.set_xlabel(r"Total $\rho(z)$", fontsize=12)
 
     # Colorbar in empty corner
     ax_cbar = fig.add_subplot(gs[0, 1])
@@ -219,9 +220,8 @@ def plot_2d_model_comparison(
     model_evaluator,
     model_summary,
     model_name,
-    config: Optional[Dict] = None,  # Full config dict - recommended approach
-    # Or specify individual parameters (legacy/override)
-    figsize=(18, 7),
+    config: Optional[Dict] = None,
+    figsize=(6.27, 4.7),
     cmap="viridis",
     vmin=None,
     vmax=None,
@@ -420,6 +420,7 @@ def plot_2d_model_comparison(
             ax_main.set_yscale("log")
         if i > 0:
             ax_main.tick_params(labelleft=False)
+        apply_axis_style(ax_main, config or {}, 'comparison_2d')
 
         # Compute marginals
         if i < 2:
@@ -441,7 +442,7 @@ def plot_2d_model_comparison(
         ax_top.tick_params(labelbottom=False)
         ax_top.set_title(panel_title, fontsize=12, fontweight="bold", pad=4)
         if i == 0:
-            ax_top.set_ylabel("ρ(R)", fontsize=12)
+            ax_top.set_ylabel(r"$\rho(R)$", fontsize=12)
 
         # Right histogram (height)
         ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main)
@@ -461,7 +462,7 @@ def plot_2d_model_comparison(
         ax_right.tick_params(labelleft=False)
         if i == 0:
             ax_right.xaxis.set_label_position("top")
-            ax_right.set_xlabel("ρ(z)", fontsize=10, labelpad=3)
+            ax_right.set_xlabel(r"$\rho(z)$", fontsize=10, labelpad=3)
 
         # Colorbar
         ax_cbar = fig.add_subplot(gs[0, 1])
@@ -709,6 +710,7 @@ def plot_2d_total_model_comparison(
             ax_main.set_yscale("log")
         if i > 0:
             ax_main.tick_params(labelleft=False)
+        apply_axis_style(ax_main, config or {}, 'comparison_2d')
 
         # Compute marginals
         if i < 2:
@@ -730,7 +732,7 @@ def plot_2d_total_model_comparison(
         ax_top.tick_params(labelbottom=False)
         ax_top.set_title(panel_title, fontsize=12, fontweight="bold", pad=4)
         if i == 0:
-            ax_top.set_ylabel("Σ ρ(R)", fontsize=12)
+            ax_top.set_ylabel(r"$\Sigma\,\rho(R)$", fontsize=12)
 
         # Right histogram (height)
         ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main)
@@ -750,14 +752,14 @@ def plot_2d_total_model_comparison(
         ax_right.tick_params(labelleft=False)
         if i == 0:
             ax_right.xaxis.set_label_position("top")
-            ax_right.set_xlabel("Σ ρ(z)", fontsize=10, labelpad=3)
+            ax_right.set_xlabel(r"$\Sigma\,\rho(z)$", fontsize=10, labelpad=3)
 
         # Colorbar
         ax_cbar = fig.add_subplot(gs[0, 1])
         cbar = plt.colorbar(mesh, cax=ax_cbar)
         cbar.ax.tick_params(labelsize=9)
         if i < 2:
-            cbar.set_label("ρ [Msun/kpc³]", fontsize=10)
+            cbar.set_label(r"$\rho\ [\mathrm{M}_\odot/\mathrm{kpc}^3]$", fontsize=10)
         else:
             cbar.set_label("Frac. Residual", fontsize=10)
 
@@ -843,6 +845,7 @@ def plot_results(
     best_model_name,
     component_name,
     coord_label,
+    config,
     log_scale=True,
     save_path=None,
     title=None,
@@ -878,8 +881,9 @@ def plot_results(
     fig : matplotlib.figure.Figure
         The generated figure
     """
+    plt_cfg = get_plot_config(config, 'results_1d')
     fig, axes = plt.subplots(
-        2, 1, figsize=(12, 6), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+        2, 1, figsize=plt_cfg.get('figsize', (7, 6)), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
     )
     # Apply mask
     mask = apply_data_range_mask(coords, data, data_range)
@@ -899,6 +903,7 @@ def plot_results(
 
     # Top panel: data and models
     ax = axes[0]
+    apply_axis_style(ax, config, 'results_1d')
     ax.scatter(
         coords_plot[0], data_plot, s=20, c="k", alpha=0.5, label="Data", zorder=1
     )
@@ -1039,7 +1044,7 @@ def plot_results(
                                 color=colors[i],
                                 alpha=0.25,
                                 zorder=9,
-                                label=f"{name} 1σ",
+                                label=f"{name} $1\\sigma$",
                             )
             else:
                 ax.plot(
@@ -1067,6 +1072,7 @@ def plot_results(
 
     # Bottom panel: residuals
     ax = axes[1]
+    apply_axis_style(ax, config, 'results_1d')
     for i, (name, summary) in enumerate(model_summaries.items()):
         if summary is None:
             continue
@@ -1108,7 +1114,7 @@ def plot_results(
     plt.tight_layout()
 
     if save_path:
-        save_figure(fig, save_path)
+        save_figure(fig, save_path, dpi=plt_cfg.get('dpi', 200))
     return fig
 
 
@@ -1228,6 +1234,7 @@ def plot_combined_components(
     component_type="star",  # 'star', 'gas', 'dm'
     r_range=(1, 200),  # radius range to plot
     save_path=None,
+    config: Optional[Dict] = None,
 ):
     """
     Plot combined density profile showing all components + total fit.
@@ -1240,11 +1247,15 @@ def plot_combined_components(
     - Total = bulge + disk + halo
     - Residual panel (data - total) / data
     """
+    plt_cfg = get_plot_config(config or {}, 'combined_1d')
     fig, axes = plt.subplots(
-        2, 1, sharex=True, gridspec_kw={"height_ratios": [3, 1]}, figsize=(12, 6)
+        2, 1, sharex=True, gridspec_kw={"height_ratios": [3, 1]},
+        figsize=plt_cfg.get('figsize', [7, 6])
     )
     ax_main = axes[0]
     ax_resid = axes[1]
+    apply_axis_style(ax_main, config or {}, 'combined_1d')
+    apply_axis_style(ax_resid, config or {}, 'combined_1d')
 
     r_data = profile.r_1d
     rho_data = profile.rho_1d
@@ -1320,7 +1331,7 @@ def plot_combined_components(
         ls="--",
         lw=2,
         alpha=0.7,
-        label=f"Disc (sph. avg.) ({disk_model or 'N/A'})",
+        label=f"Disc ({disk_model or 'N/A'})",
         color="C1",
         zorder=5,
     )
@@ -1642,6 +1653,7 @@ def plot_profiles(
     config: Dict,
     save_fig: Optional[bool] = True,
     experiment: Optional[str] = None,
+    show_fig: bool = False
 ):
     """
     Plot density profiles for stars, gas, and dark matter for halo at redshift.
@@ -1684,7 +1696,11 @@ def plot_profiles(
     ax.legend()
     if save_fig:
         save_figure(fig, f"{plot_path}/total_data.png", plt_cfg.get('dpi', 200))
-    plt.close(fig)
+
+    if show_fig:
+        return fig
+    else:
+        plt.close(fig)
 
 
 def plot_fitted_mass_evolution(
@@ -1755,6 +1771,8 @@ def plot_fitted_mass_evolution(
 
     # Filter to valid snapshots only (skip index 0 if present)
     valid_snapshots = sorted(i for i in masses if i > 0)
+    if not valid_snapshots:
+        return
     mass_array = np.array([masses[i] for i in valid_snapshots]).T
     mass_lo_array = None
     mass_hi_array = None
@@ -1828,6 +1846,8 @@ def plot_data_mass_evolution(
 
     cmap = cm.get_cmap(plt_cfg.get('cmap', 'turbo_r'))
     trans_redshifts = np.log(1 + np.array(redshifts))
+    if len(trans_redshifts) == 0:
+        return
     norm = mcolors.Normalize(vmin=trans_redshifts.min(), vmax=trans_redshifts.max())
 
     data_masses = {}
@@ -2011,8 +2031,9 @@ def plot_reddish_2022_figure(
     M_disk = np.array(M_disk)
     M_halo = np.array(M_halo)
 
-    log_p = np.log10(M_bulge / (M_bulge + M_disk))  # Bulge-to-Disk ratio
-    log_q = np.log10(M_disk / (M_disk + M_halo))   # Disk-to-Halo ratio
+    with np.errstate(divide='ignore', invalid='ignore'):
+        log_p = np.log10(M_bulge / (M_bulge + M_disk))  # Bulge-to-Disk ratio
+        log_q = np.log10(M_disk / (M_disk + M_halo))   # Disk-to-Halo ratio
 
     # Use redshifts only for valid snapshots
     z_orig = np.array([redshifts[i] for i in valid_indices])
@@ -2020,6 +2041,9 @@ def plot_reddish_2022_figure(
 
     mask = (log_p > exclude_low_p)
     z_plot, log_p, log_q, z_orig = z_plot[mask], log_p[mask], log_q[mask], z_orig[mask]
+
+    if len(z_plot) == 0:
+        return
 
     fig, ax = plt.subplots(figsize=plt_cfg.get('figsize', (8, 6)))
 
@@ -2149,12 +2173,12 @@ def plot_component_mass_evolution(
 
     masses = {
         'bulge': M_bulge,
-        'disc': M_disk,
+        'disk': M_disk,
         'halo': M_halo,
         'total': (M_bulge + M_disk + M_halo)
     }
 
-    components = ['bulge', 'disc', 'halo', 'total']
+    components = ['bulge', 'disk', 'halo', 'total']
 
     # Get redshifts and times only for valid snapshots
     valid_redshifts = np.array([redshifts[i] for i in valid_indices])
@@ -2170,9 +2194,10 @@ def plot_component_mass_evolution(
     trans_z = np.log(1 + valid_redshifts)
 
     for comp in components:
+        label = "Disc" if comp == "disk" else comp.capitalize()
         ax.semilogy(
             trans_z, masses[comp], '-o',
-            label=comp.capitalize(), color=colors[comp],
+            label=label, color=colors[comp],
             linewidth=plt_cfg.get('linewidth', 2),
             markersize=plt_cfg.get('markersize', 5),
             markeredgecolor='white',
@@ -2321,6 +2346,7 @@ def plot_halo_shape_evolution(
     }
 
     for ax, param in zip(axes, params):
+        apply_axis_style(ax, config, 'halo_shape')
         ax.set_ylabel(param_labels.get(param, param))
 
         for comp in components:
@@ -2574,7 +2600,7 @@ def plot_shape_analysis(
     cos_theta = np.abs(np.einsum('ni,i->n', minor_vecs, l_hat))
     tilt_deg = np.degrees(np.arccos(np.clip(cos_theta, 0, 1)))
 
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    fig, axes = plt.subplots(1, 3, figsize=plt_cfg.get('figsize', [6.27, 4.7]))
 
     # --- Panel 1: Axis ratios ---
     ax = axes[0]
@@ -2593,6 +2619,7 @@ def plot_shape_analysis(
     ax.set_title('Stellar shape vs radius')
     ax.set_ylim(0, 1.05)
     ax.legend(fontsize=9)
+    apply_axis_style(ax, config, 'shape_analysis')
 
     # --- Panel 2: Triaxiality ---
     ax = axes[1]
@@ -2607,10 +2634,11 @@ def plot_shape_analysis(
 
     ax.set_xscale('log')
     ax.set_xlabel('Radius [kpc]')
-    ax.set_ylabel('Triaxiality  T = (a^2-b^2)/(a^2-c^2)')
+    ax.set_ylabel(r'Triaxiality $T = (a^2-b^2)/(a^2-c^2)$')
     ax.set_title('Triaxiality vs radius')
     ax.set_ylim(0, 1)
     ax.legend(fontsize=9, loc='upper left')
+    apply_axis_style(ax, config, 'shape_analysis')
 
     # --- Panel 3: Minor axis tilt (warp diagnostic) ---
     ax = axes[2]
@@ -2622,6 +2650,7 @@ def plot_shape_analysis(
     ax.set_ylabel('Minor axis tilt from L [degrees]')
     ax.set_title('Disk normal orientation vs radius\n(non-zero = warp)')
     ax.legend(fontsize=9)
+    apply_axis_style(ax, config, 'shape_analysis')
 
     plt.suptitle(f'{halo}-{name} (z={redshift:.3f}) — Stellar shape tensor analysis', fontsize=14)
     plt.tight_layout()
@@ -2644,9 +2673,7 @@ def plot_mass_error(
     component: str, halo: str, name: str,
     config: Dict, save_fig: bool, show_fig: bool,
     experiment: Optional[str],
-    PATHS: ProjectPaths,
-    vs_redshift: bool = False,
-    vs_redshift_mode: str = 'mean',  # 'mean' or 'total' (outermost radius)
+    PATHS: ProjectPaths
 )-> Any | None:
     df = pd.read_csv(csv_path)
     plt_cfg = get_plot_config(config, 'mass_evolution')
@@ -2663,7 +2690,7 @@ def plot_mass_error(
     # colour map
     cmap = plt.get_cmap(plt_cfg.get('cmap', 'turbo_r'))
     norm = plt.Normalize(vmin=min(plot_redshifts), vmax=np.log(4))
-
+    
     sub = df[
         (df['halo'] == halo)           &
         (df['component'] == component) &
@@ -2671,102 +2698,42 @@ def plot_mass_error(
         (df['sim_mass'] > 0)           &
         (df['model_mass'] > 0)
     ]
+    
+    fig, ax = plt.subplots(figsize=plt_cfg.get('figsize', (8, 6)))
+    
+    for z in redshifts:
+        sub_z = sub[(sub['redshift'] == z)]
+        if sub_z.empty:
+            continue
+        z_plot = np.log(1+z)
+        color = cmap(norm(z_plot))
+        ax.plot(sub_z['radius_kpc'], sub_z['rel_error'], color=color)
+    
+    ax.axhline(0.1, linestyle='-', color='grey', alpha=0.4, lw=0.8, label='10%')
+    ax.axhline(0.5, linestyle='-', color='red', alpha=0.4, lw=0.8, label='50%')
+    ax.axhline(sub['rel_error'].mean(), linestyle='--', color='black', label='mean')
+    ax.axhline(sub['rel_error'].median(), linestyle=':', color='black', label='median')
+    ax.legend()
 
-    fig, ax = plt.subplots(figsize=plt_cfg.get('figsize', (7, 6)))
+    # Colorbar for redshift
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, label='ln(1+z)')
 
-    if vs_redshift:
-        # Aggregate residuals per redshift
-        z_vals, y_vals, y_lo, y_hi = [], [], [], []
-        for z in sorted(sub['redshift'].unique()):
-            sub_z = sub[sub['redshift'] == z]
-            if sub_z.empty:
-                continue
-            if vs_redshift_mode == 'total':
-                # Relative error at the outermost radius = total enclosed mass error
-                row = sub_z.loc[sub_z['radius_kpc'].idxmax()]
-                y = row['rel_error']
-                y_vals.append(y)
-                y_lo.append(y)
-                y_hi.append(y)
-            else:
-                # Mean residual across all radii, with 16th–84th percentile band
-                y_vals.append(sub_z['rel_error'].mean())
-                y_lo.append(sub_z['rel_error'].quantile(0.16))
-                y_hi.append(sub_z['rel_error'].quantile(0.84))
-            z_vals.append(np.log(1 + z))
-
-        z_vals = np.array(z_vals)
-        y_vals = np.array(y_vals)
-        y_lo = np.array(y_lo)
-        y_hi = np.array(y_hi)
-
-        colors = [cmap(norm(z)) for z in z_vals]
-        ax.scatter(z_vals, y_vals, c=z_vals, cmap=cmap, norm=norm,
-                   s=40, zorder=3, edgecolors='white', linewidth=0.4)
-        ax.plot(z_vals, y_vals, '-', color='gray', alpha=0.5, lw=1, zorder=2)
-        if vs_redshift_mode == 'mean':
-            ax.fill_between(z_vals, y_lo, y_hi, alpha=0.2, color='gray', label='16th–84th pct')
-
-        ax.axhline(0.1, linestyle='-', color='grey', alpha=0.4, lw=0.8, label='10%')
-        ax.axhline(0.5, linestyle='-', color='red', alpha=0.4, lw=0.8, label='50%')
-        ax.legend()
-
-        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        fig.colorbar(sm, ax=ax, label='ln(1+z)')
-
-        ylabel = (
-            'Rel. Residual at $r_{max}$ (total mass)'
-            if vs_redshift_mode == 'total'
-            else 'Mean Rel. Residual (all radii)'
-        )
-        ax.set(
-            yscale='log',
-            xlabel=r'$\ln(1+z)$',
-            ylabel=ylabel,
-        )
-        ax.invert_xaxis()
-
-        # Secondary z axis on top
-        def ln1pz_to_z(x): return np.exp(x) - 1
-        def z_to_ln1pz(x): return np.log(1 + x)
-        secax = ax.secondary_xaxis('top', functions=(ln1pz_to_z, z_to_ln1pz))
-        secax.set_xlabel(r'Redshift $z$')
-
-    else:
-        for z in redshifts:
-            sub_z = sub[(sub['redshift'] == z)]
-            if sub_z.empty:
-                continue
-            z_plot = np.log(1+z)
-            color = cmap(norm(z_plot))
-            ax.plot(sub_z['radius_kpc'], sub_z['rel_error'], color=color)
-
-        ax.axhline(0.1, linestyle='-', color='grey', alpha=0.4, lw=0.8, label='10%')
-        ax.axhline(0.5, linestyle='-', color='red', alpha=0.4, lw=0.8, label='50%')
-        ax.axhline(sub['rel_error'].mean(), linestyle='--', color='black', label='mean')
-        ax.axhline(sub['rel_error'].median(), linestyle=':', color='black', label='median')
-        ax.legend()
-
-        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        fig.colorbar(sm, ax=ax, label='ln(1+z)')
-
-        ax.set(
-            xscale='log',
-            yscale='log',
-            xlabel='Radius [kpc]',
-            ylabel='Rel. Residual - (|model - data| / data)',
-        )
+    ax.set(
+        xscale = "log",
+        yscale = "log",
+        xlabel = "Radius [kpc]",
+        ylabel = "Rel. Residual - (|model - data| / data)"
+    )
 
     fig.suptitle(f'Mass profiles — {component} - {halo} / {name}', fontsize=14)
     plt.tight_layout()
     if save_fig:
-        suffix = f"_vs_z_{vs_redshift_mode}" if vs_redshift else ""
         if experiment:
-            path = PATHS.plots / experiment / halo / f"{component}_mass_error_evol{suffix}.png"
+            path = PATHS.plots / experiment / halo / f"{component}_mass_error_evol.png"
         else:
-            path = PATHS.plots / halo / f"{component}_mass_error_evol{suffix}.png"
+            path = PATHS.plots / halo / f"{component}_mass_error_evol.png"
         save_figure(fig, path, plt_cfg.get('dpi', 200))
     if show_fig:
         return fig

@@ -240,3 +240,6 @@ plots/
 
 # macOS
 .DS_Store
+
+# Report drafts kept local only
+paper_review/

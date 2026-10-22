@@ -2094,6 +2094,7 @@ def generate_snapshot_profiles(
         radii_fractions = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5]  # fractions of R200
         radii_to_test = [f * R200 for f in radii_fractions]  # kpc
         for r in radii_to_test:
+            test_sphere = None
             try:
                 test_sphere = ds.sphere(center.to("kpc"), ds.quan(r, "kpc"))
 
@@ -2129,7 +2130,7 @@ def generate_snapshot_profiles(
                     logger.info("Possible disk + bulge system")
                 else:
                     logger.info("Likely spheroidal/elliptical (not disk-dominated)")
-            except ValueError as e:
+            except Exception as e:
                 logger.warning(f"Could not compute shape tensor at r={r} kpc: {e}", exc_info=True)
 
             finally:

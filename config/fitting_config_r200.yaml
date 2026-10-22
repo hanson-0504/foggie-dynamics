@@ -32,15 +32,15 @@ plotting:
   # Default settings (applied to all plots unless overridden)
   default:
     dpi: 200
-    cmap: 'viridis'
+    #cmap: 'viridis'
     percentiles: [1, 99]
     linewidth: 2.0
     linewidth_bold: 3.0
     markersize: 5
     alpha_fill: 0.3
-    fontsize_title: 14
-    fontsize_label: 12
-    fontsize_tick: 10
+    fontsize_title: 11
+    fontsize_label: 10
+    fontsize_tick: 9
     # Page width reference (A4 with standard 1" margins).
     # Run \the\textwidth in LaTeX to get the exact value for your template.
     # Figsize width should match how the figure is included in the report:
@@ -52,7 +52,7 @@ plotting:
   # 2D comparison plots (data, model, residual panels)
   # Three side-by-side colormaps — needs full width and enough height for colorbars
   comparison_2d:
-    figsize: [18, 7]         # three-panel side-by-side (Data | Model | Residual)
+    figsize: [10, 5]    # three-panel side-by-side (Data | Model | Residual), full width 4:3
     max_residual: 100.0     # Maximum absolute residual (clips extreme values)
     residual_cmap: 'RdBu_r' # Colormap for residual panel
     log_colorbar: true      # Use log scale for density colorbars
@@ -61,12 +61,27 @@ plotting:
     dpi: 150                # Override default DPI if needed
 
   # 1D density profile plots (main + residual sub-panel)
-  # Sized for full-width inclusion; reduce to 4.2 if using width=0.67\textwidth in LaTeX
   profile_1d:
-    figsize: [6.27, 5.0]     # full page width
+    figsize: [7, 6]
     log_scale: true         # Use log-log scale
     show_uncertainty: true  # Show 1-sigma bands for best model
     dpi: 200                # Higher resolution for profile plots
+
+  # 2-panel fitting result plots (main profile + residual sub-panel), 2/3 width
+  results_1d:
+    figsize: [7, 6]
+    log_scale: true
+    dpi: 200
+
+  # 2-panel combined component decomposition (profile + residual), 2/3 width
+  combined_1d:
+    figsize: [7, 6]
+    dpi: 200
+
+  # 3-panel stellar shape analysis (axis ratios, triaxiality, tilt), full width
+  shape_analysis:
+    figsize: [10, 5]
+    dpi: 200
 
   # Corner plots (MCMC posteriors) — detail/appendix use, not constrained to page width
   corner:
@@ -76,20 +91,22 @@ plotting:
     quantiles: [0.16, 0.5, 0.84]  # Quantiles to show (16th, 50th, 84th percentiles)
 
   # Single-panel evolution plots
-  # Change width to 4.2 if including at width=0.67\textwidth, 3.15 for side-by-side pairs
   mass_evolution:
-    figsize: [6.27, 4.5]     # full page width
+    figsize: [7, 6]
     cmap: 'turbo_r'
     markersize: 4
 
   ratio_evolution:
-    figsize: [6.27, 4.5]     # full page width
+    figsize: [7, 6]
     scatter_size: 60
     linewidth: 1.0
     cmap: 'turbo_r'
 
   component_evolution:
-    figsize: [6.27, 4.5]     # full page width
+    figsize: [7, 6]
+
+  halo_shape:
+    figsize: [8, 10]    # tall 3-panel (alpha, beta, rs vs redshift), 3× 4:3 stacked
 
   colors:
     structural:
@@ -358,9 +375,9 @@ gas:
 dm:
   halo:
     enabled: True
-    # DM halo: 0.5% - 125% of R200 (extends to very small radii)
+    # DM halo: 0.9% - 125% of R200 (extends to very small radii)
     # For R200=200 kpc: 0.3-250 kpc
-    r_range: [0.005, 1.25]
+    r_range: [0.008, 1.25]
     range_scaling:
       units: "r200"
     bounds:
