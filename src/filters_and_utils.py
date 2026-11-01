@@ -132,7 +132,7 @@ def add_rotated_fields(ds, Rmat, center, comp="star"):
                     data[comp, "particle_position_z"].to("kpc").d - cz,
                 ]
             )
-            pos_rot = pos @ Rmat.T
+            pos_rot = pos @ Rmat
             return ds.arr(np.sqrt(pos_rot[:, 0] ** 2 + pos_rot[:, 1] ** 2), "kpc")
 
         def _z_disk(field, data):
@@ -143,7 +143,7 @@ def add_rotated_fields(ds, Rmat, center, comp="star"):
                     data[comp, "particle_position_z"].to("kpc").d - cz,
                 ]
             )
-            pos_rot = pos @ Rmat.T
+            pos_rot = pos @ Rmat
             return ds.arr(pos_rot[:, 2], "kpc")
 
         def _abs_z_disk(field, data):
@@ -174,7 +174,7 @@ def add_rotated_fields(ds, Rmat, center, comp="star"):
             original_shape = x.shape
 
             pos = np.column_stack([x.flatten(), y.flatten(), z.flatten()])
-            pos_rot = pos @ Rmat.T
+            pos_rot = pos @ Rmat
 
             R = np.sqrt(pos_rot[:, 0] ** 2 + pos_rot[:, 1] ** 2)
             return data.ds.arr(R.reshape(original_shape), "kpc")
@@ -188,7 +188,7 @@ def add_rotated_fields(ds, Rmat, center, comp="star"):
             original_shape = x.shape
 
             pos = np.column_stack([x.flatten(), y.flatten(), z.flatten()])
-            pos_rot = pos @ Rmat.T
+            pos_rot = pos @ Rmat
             z_rot = pos_rot[:, 2]
 
             return data.ds.arr(z_rot.reshape(original_shape), "kpc")
