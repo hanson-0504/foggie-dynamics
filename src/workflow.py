@@ -111,6 +111,7 @@ from .filters_and_utils import (
 from .io import ensure_directory, load_hdf5
 from .io import save_hdf5 as save_metadata
 from .models import ModelRegistry
+from .snapshot_profiles import *
 
 PATHS = ProjectPaths.create()
 DATA_DIR = PATHS.data
@@ -207,6 +208,21 @@ class DensityProfile:
         """
         ds = yt.load(str(filepath))
         return cls.from_profile_dataset(ds, component, include_stats)
+    
+    @classmethod
+    def from_profile(cls, profile, component, include_stats=False):
+        """Create DensityProfile from an in-memory yt profile
+        (same result as saving and reloading it)."""
+        return cls.from_profile_dataset(_InMemoryProfile(profile), component, include_stats)
+
+
+class _InMemoryProfile:
+    """Exposes an in-memory yt profile through the ds.data[...] lookups extract_density uses on saved profiles."""
+
+    def __init__(self, profile):
+        self.data = {f"{ax}_bins": getattr(profile, f"{ax}_bins") for ax in "xyz"}
+        for (_, fname), arr in profile.field_data.items():  # e.g. ("star", "particle_mass") -> "particle_mass"
+            self.data[fname] = arr
 
 
 @dataclass
@@ -1719,7 +1735,7 @@ def process_time_series(
     return evolution_data
 
 
-def generate_snapshot_profiles(
+def generate_snapshot_profiles_legacy(
     snap_path: str | Path,
     halo_id: str,
     logger: logging.Logger,
@@ -2349,4 +2365,76 @@ def generate_snapshot_profiles(
     gc.collect()
     logger.debug("Freed yt dataset and forced garbage collection")
 
+    return density_profiles, metadata
+
+
+def generate_snapshot_profiles(
+    snap_path: str | Path,
+    halo_id: str,
+    logger: logging.Logger,
+    output_dir: Optional[Path] = None,
+    skip_shape_analysis: bool = True,
+    center_find_method: str = "average",
+    save_profiles: bool = True,
+    component: str = "all",
+    sim_type: str = "full",
+    make_projections: bool = True,
+    experiment: Optional[str] = None,
+    redshift: Optional[float] = None,
+    config: Optional[Dict[str, Any]] = None,
+):
+    avail_comps = available_components(sim_type, component)
+    ds, snapshot_info = load_dataset(snap_path, logger, redshift, halo_id)
+    redshift = float(snapshot_info["redshift"])
+    log_memory_usage(logger, "Load Dataset")
+
+    register_particle_filters(ds, sim_type, logger)
+    log_memory_usage(logger, "Register particle filters")
+
+    center = find_center(ds, sim_type, center_find_method, logger)
+    logger.info(f"Galaxy Center (Mpc): {center.to('Mpc')}")
+    log_memory_usage(logger, "Find Center")
+
+    r200 = compute_r200(ds, center, halo_id, redshift, sim_type, PATHS, logger)
+    sphere = ds.sphere(center.to("kpc"), ds.quan(r200, "kpc"))
+
+    if make_projections:
+        make_r200_projections(
+            ds, center, r200, redshift, avail_comps, snap_path, 
+            halo_id, PATHS, logger, experiment, config
+        )
+
+    # shape analysis uses star particles
+    shape_tensors = None
+    if not skip_shape_analysis and "star" in avail_comps:
+        shape_tensors = shape_analysis(sphere, center, r200, logger)
+    
+    l_hats = angular_momentum(sphere, avail_comps, logger)
+    R_mats = disk_frame(ds, center, l_hats, avail_comps, logger)
+    
+    profiles = build_profiles(ds, sphere, r200, avail_comps, logger)
+    log_memory_usage(logger, "Create Profiles")
+        
+    radii = mass_radii(r200, config, logger)
+    masses = enclosed_masses(sphere, radii, avail_comps, logger)
+    log_memory_usage(logger, "Calculate enclosed masses")
+
+    metadata = build_metadata(
+        halo_id, snapshot_info, center, r200, R_mats, l_hats,
+        snap_path, masses, shape_tensors
+    )
+    
+    if save_profiles:
+        data_path = snapshot_data_dir(PATHS, halo_id, redshift, sim_type, experiment, output_dir)
+        write_profiles(profiles, data_path, logger)
+        filepath = data_path/ "metadata.h5"
+        save_metadata(filepath, metadata)
+        logger.info(f"Saved metadata to {filepath}")
+        
+    logger.info("Converting profiles to DensityProfile objects...")
+    density_profiles = {
+        comp: DensityProfile.from_profile(prof, comp)
+        for comp, prof in profiles.items()
+    }
+    logger.info("Profile generation completed successfully")
     return density_profiles, metadata
