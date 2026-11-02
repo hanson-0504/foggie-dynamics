@@ -2409,7 +2409,18 @@ def generate_snapshot_profiles(
     if not skip_shape_analysis and "star" in avail_comps:
         shape_tensors = shape_analysis(sphere, center, r200, logger)
     
-    l_hats = angular_momentum(sphere, avail_comps, logger)
+    # calculate angular momentum within a smaller sphere
+    inner_sphere = ds.sphere(center.to("kpc"), ds.quan(5, "kpccm"))
+    bulk_vel = inner_sphere.quantities.bulk_velocity(use_gas=True, use_particles=True)
+    inner_sphere.set_field_parameter("bulk_velocity", bulk_vel)
+    logger.info(f"Inner sphere bulk velocity = {bulk_vel.to('km/s')}")
+    if "star" in avail_comps:
+        n_star = len(inner_sphere["star", "particle_mass"])
+        logger.info(f"Star particles within inner sphere = {n_star}")
+        if n_star < 100:
+            logger.warning(f"Only {n_star} star particles in inner sphere - disk frame may be unreliable")
+
+    l_hats = angular_momentum(inner_sphere, avail_comps, logger)
     R_mats = disk_frame(ds, center, l_hats, avail_comps, logger)
     
     profiles = build_profiles(ds, sphere, r200, avail_comps, logger)
