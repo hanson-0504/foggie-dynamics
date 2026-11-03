@@ -951,61 +951,12 @@ def plot_results(
                         # Evaluate model for each sample
                         model_draws = []
 
-                        # IMPORTANT: MCMC samples are stored in log10 space for density/scale parameters
-                        # but ModelRegistry param_names may use linear names (e.g., 'rho0' instead of 'log10_rho0')
-                        # We need to convert samples from log10 to linear space
-
-                        # Parameters that are sampled in log10 space
-                        log_params = {
-                            "rho0",
-                            "rs",
-                            "rc",
-                            "rd",
-                            "R_d",
-                            "R_d1",
-                            "R_d2",
-                            "z_0",
-                            "rho01",
-                            "rho02",
-                            "rho_0",
-                            "r_s",
-                            "r_c",
-                            "rho_01",
-                            "rho_02",
-                        }
-
                         for draw_idx, idx in enumerate(indices):
-                            temp_summary = summary.copy()
-
-                            # Extract parameters from this sample
-                            for param_idx, param_name in enumerate(param_names):
-                                sample_val = samples[idx, param_idx]
-
-                                # Check if this parameter was sampled in log10 space
-                                # (most density and scale parameters are)
-                                param_base = param_name.replace(
-                                    "_", ""
-                                )  # Handle variations like r_s vs rs
-
-                                if param_name in log_params or param_base in log_params:
-                                    # Sample is in log10 space, convert to linear
-                                    linear_val = 10**sample_val
-                                    temp_summary[param_name] = linear_val
-
-                                    # Also store the log10 version
-                                    log_name = f"log10_{param_name}"
-                                    temp_summary[log_name] = sample_val
-
-                                    # Handle underscore variations
-                                    if "_" in param_name:
-                                        no_underscore = param_name.replace("_", "")
-                                        temp_summary[no_underscore] = linear_val
-                                        temp_summary[f"log10_{no_underscore}"] = (
-                                            sample_val
-                                        )
-                                else:
-                                    # Parameter sampled in linear space (e.g., alpha, beta, A, B)
-                                    temp_summary[param_name] = sample_val
+                            # Sample columns follow the registry's sampled names
+                            # (log10_ values stay log10; the evaluator adds linear ones)
+                            temp_summary = {
+                                pname: samples[idx, i] for i, pname in enumerate(param_names)
+                            }
 
                             if draw_idx == 0:  # Debug first sample
                                 for pname in param_names:
@@ -1463,41 +1414,24 @@ def plot_corner(model_name, summary, save_path=None, **corner_kwargs):
         # Fallback: use generic labels if dimensions don't match
         labels = [f"param_{i}" for i in range(n_params_total)]
 
-    # Create LaTeX-formatted labels for better visualization
+    # LaTeX labels; names follow the convention <name> / log10_<name>
+    latex_names = {
+        "rho0": r"\rho_0", "rho01": r"\rho_{01}", "rho02": r"\rho_{02}",
+        "rs": "r_s", "rc": "r_c", "Rd1": "R_{d1}", "Rd2": "R_{d2}", "z0": "z_0",
+        "rcore": r"r_{\rm core}", "rcutoff": r"r_{\rm cutoff}",
+        "alpha": r"\alpha", "beta": r"\beta", "gamma": r"\gamma",
+    }
+    units = {"rs": " [kpc]", "Rd1": " [kpc]", "Rd2": " [kpc]", "z0": " [kpc]",
+             "rcore": " [kpc]", "rcutoff": " [kpc]", "B": " [kpc]"}
     latex_labels = []
     for label in labels:
-        # Convert common parameter names to LaTeX
-        if label.startswith("log10_rho"):
-            # Extract subscript if present (e.g., log10_rho01 -> \log_{10}\rho_{01})
-            suffix = label.replace("log10_rho", "")
-            if suffix:
-                latex_labels.append(f"$\\log_{{10}} \\rho_{{{suffix}}}$")
-            else:
-                latex_labels.append("$\\log_{{10}} \\rho_0$")
+        if label == "log_sigma":
+            latex_labels.append(r"$\ln \sigma$")
         elif label.startswith("log10_"):
-            param = label.replace("log10_", "")
-            latex_labels.append(f"$\\log_{{10}}$ {param}")
-        elif label == "rho_0":
-            latex_labels.append("$\\rho_0$")
-        elif label == "r_s":
-            latex_labels.append("$r_s$ [kpc]")
-        elif label == "R_d" or label == "R_d1" or label == "R_d2":
-            latex_labels.append(f"${label}$ [kpc]")
-        elif label == "z_0":
-            latex_labels.append("$z_0$ [kpc]")
-        elif label == "alpha":
-            latex_labels.append("$\\alpha$")
-        elif label == "beta":
-            latex_labels.append("$\\beta$")
-        elif label == "log_sigma":
-            latex_labels.append("$\\log \\sigma$")
-        elif label == "A" or label == "B":
-            latex_labels.append(f"${label}$")
-        elif label == "r_core" or label == "rcore" or label == "rc" or label == "r_c":
-            latex_labels.append("$r_c$")
+            name = label[len("log10_"):]
+            latex_labels.append(f"$\\log_{{10}} {latex_names.get(name, name)}$")
         else:
-            # Default: wrap in $ for math mode
-            latex_labels.append(f"${label}$")
+            latex_labels.append(f"${latex_names.get(label, label)}${units.get(label, '')}")
 
     # Set default corner plot options
     corner_defaults = {

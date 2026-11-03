@@ -118,8 +118,8 @@ star:
       beta: [3.0, 7.0]
       gamma: [0.1, 3.0]
       log_sigma: [-6, 2]
-      r_core: [0.1, 1.5]
-      r_cutoff: [0.5, 2.0]
+      rcore: [0.1, 1.5]
+      rcutoff: [0.5, 2.0]
     p0:
       log10_rho0: 9.0
       log10_rs: 0.0
@@ -127,8 +127,8 @@ star:
       beta: 4.0
       gamma: 1.0
       log10_rc: -0.3
-      r_core: 0.3
-      r_cutoff: 1.0
+      rcore: 0.3
+      rcutoff: 1.0
     models:
       - Hernquist
       - Two-Power
@@ -146,6 +146,7 @@ star:
   disk:
     enabled: True
     R_range: [3.0, 30.0]  # Range at z=0 in kpc
+    z_min: 0.0            # Min |z| in kpc (0 includes the midplane bin)
     z_max: 7.0            # Max height at z=0 in kpc
     range_scaling:
       mode: "linear"      # Disk also scales with (1+z)
@@ -154,9 +155,9 @@ star:
     bounds:
       log10_rho01: [3.0, 10.0]
       log10_rho02: [1.0, 8.0]
-      R_d1: [0.1, 10.0]
-      R_d2: [5.0, 50.0]
-      z_0: [0.1, 3.0]
+      Rd1: [0.1, 10.0]
+      Rd2: [5.0, 50.0]
+      z0: [0.1, 3.0]
       log10_z0: [-2.0, 0.7]
       log_sigma: [-6, 2]
       A: [-10.0, 10.0]
@@ -164,9 +165,9 @@ star:
     p0:
       log10_rho01: 8.0
       log10_rho02: 5.0
-      R_d1: 3.0
-      R_d2: 15.0
-      z_0: 1.0
+      Rd1: 3.0
+      Rd2: 15.0
+      z0: 1.0
       log10_z0: 0.0
       A: 0.25
       B: 1.0
@@ -189,8 +190,8 @@ star:
       beta: [3.0, 7.0]
       gamma: [0.1, 3.0]
       log_sigma: [-6, 1]
-      r_core: [0.1, 1.5]
-      r_cutoff: [0.5, 2.0]
+      rcore: [0.1, 1.5]
+      rcutoff: [0.5, 2.0]
     p0:
       log10_rho0: 9.0
       log10_rs: 0.0
@@ -198,8 +199,8 @@ star:
       beta: 4.0
       gamma: 1.0
       log10_rc: -0.3
-      r_core: 0.3
-      r_cutoff: 1.0
+      rcore: 0.3
+      rcutoff: 1.0
     models:
       - Hernquist
       - Two-Power
@@ -246,6 +247,7 @@ gas:
   disk:
     enabled: True
     R_range: [1.0, 30.0]  # Range at z=0 in kpc
+    z_min: 0.0            # Min |z| in kpc (0 includes the midplane bin)
     z_max: 7.0            # Max height at z=0 in kpc
     range_scaling:
       mode: "linear"
@@ -254,9 +256,9 @@ gas:
     bounds:
       log10_rho01: [3.0, 8.0]
       log10_rho02: [0.0, 7.0]
-      R_d1: [0.1, 10.0]
-      R_d2: [5.0, 30.0]
-      z_0: [0.1, 3.0]
+      Rd1: [0.1, 10.0]
+      Rd2: [5.0, 30.0]
+      z0: [0.1, 3.0]
       log10_z0: [-2.0, 0.7]
       log_sigma: [-6, 1]
       A: [-10.0, 10.0]
@@ -264,9 +266,9 @@ gas:
     p0:
       log10_rho01: 7.0
       log10_rho02: 5.0
-      R_d1: 3.0
-      R_d2: 15.0
-      z_0: 1.0
+      Rd1: 3.0
+      Rd2: 15.0
+      z0: 1.0
       log10_z0: 0.0
       A: 0.25
       B: 1.0

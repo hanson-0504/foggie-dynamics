@@ -243,7 +243,7 @@ def gelman_rubin_diagnostic(sampler, nburn, param_names, verbose=False):
     Graphical Statistics, 7(4), 434-455.
     """
     chains = sampler.get_chain(discard=nburn)
-    nwalkers, nsteps, ndim = chains.shape
+    nsteps, nwalkers, ndim = chains.shape
 
     split_point = nsteps // 2
     chain_1 = chains[:split_point]
@@ -333,11 +333,10 @@ def compare_models(
 
     Examples
     --------
-    # 1D bulge comparison
+    # 1D bulge comparison (evaluators from ModelRegistry take the summary)
     model_evals = {
-        'Hernquist': lambda coords, s: models.hernquist_density(
-            coords[0], s['rho_0'], s['r_s']),
-        'Exponential': lambda coords, s: s['rho_0'] * np.exp(-coords[0] / s['r_s'])
+        'Hernquist': ModelRegistry.get_evaluator('Hernquist'),
+        'Exponential': ModelRegistry.get_evaluator('Exponential'),
     }
 
     best, summary, table = compare_models(
@@ -351,10 +350,10 @@ def compare_models(
     # 2D disk comparison
     model_evals = {
         'Single': lambda coords, s: models.disk_density(
-            coords[0], coords[1], s['rho_0'], s['R_d'], s['z_0']),
+            coords[0], coords[1], s['rho01'], s['Rd1'], s['z0']),
         'Double': lambda coords, s: models.double_exp_model(
-            coords[0], coords[1], s['rho_01'], s['rho_02'],
-            s['R_d1'], s['R_d2'], s['z_0'])
+            coords[0], coords[1], s['rho01'], s['rho02'],
+            s['Rd1'], s['Rd2'], s['z0'])
     }
 
     best, summary, table = compare_models(
@@ -826,31 +825,8 @@ def calc_masses_with_uncertainties(
 
         mass_integrator = ModelRegistry.get_mass_integrator(best_model)
         flat_samples = summary['samples']
-        # Use stored param names if available, otherwise fallback to model-specific mapping
-        param_names = summary.get('_param_names')
-        if param_names is None:
-            # Fallback for older result files without _param_names
-            # Map model names to their expected sample column order
-            model_param_map = {
-                "NFW": ["log10_rho0", "log10_rs", "log_sigma"],
-                "Hernquist": ["log10_rho0", "log10_rs", "log_sigma"],
-                "Exponential": ["log10_rho0", "log10_rs", "log_sigma"],
-                "Two-Power": ["log10_rho0", "log10_rs", "alpha", "beta", "log_sigma"],
-                "Three-Power": ["log10_rho0", "log10_rs", "alpha", "beta", "gamma", "log_sigma"],
-                "Single-Exponential": ["log10_rho01", "R_d1", "z_0", "log_sigma"],
-                "Double-Exponential": ["log10_rho01", "log10_rho02", "R_d1", "R_d2", "log10_z0", "log_sigma"],
-                "Single-Disk-Flaring": ["log10_rho01", "R_d1", "A", "B", "log_sigma"],
-                "Double-Disk-Flaring": ["log10_rho01", "log10_rho02", "R_d1", "R_d2", "A", "B", "log_sigma"],
-                "Exp-Cutoff": ["log10_rho0", "r_core", "r_cutoff", "alpha", "log_sigma"],
-                "Cored-bulge": ["log10_rho0", "log10_rs", "log10_rc", "alpha", "beta", "log_sigma"],
-                "Core-Only": ["log10_rho0", "log10_rs", "log10_rc", "alpha", "log_sigma"],
-            }
-            param_names = model_param_map.get(best_model)
-            if param_names is None:
-                # Last resort: filter keys and truncate
-                param_names = [k for k in summary if not k.endswith('_err') and k not in
-                               ["samples", "acceptance_fraction", "rhat", "n_eff", "sigma"]]
-                param_names = param_names[:flat_samples.shape[1]]
+        # Sample columns = the registry's sampled names, then log_sigma
+        param_names = ModelRegistry.get_param_names(best_model) + ["log_sigma"]
         # subsample
         indices = np.random.choice(
             len(flat_samples),
@@ -875,17 +851,9 @@ def calc_masses_with_uncertainties(
 
                 mass_samples = []
                 for idx in indices:
+                    # Sampled values; the registry integrator adds the linear ones
                     sample_dict = {name: flat_samples[idx, i]
                                    for i, name in enumerate(param_names)}
-                    # Add linear-scale aliases for log params (mass integrators expect linear scale)
-                    for key in list(sample_dict.keys()):
-                        if key.startswith("log10_"):
-                            base = key.replace("log10_", "")
-                            sample_dict[base] = 10 ** sample_dict[key]
-                        if "_" in key and not key.endswith("_err"):
-                            no_underscore = key.replace("_", "")
-                            if no_underscore not in sample_dict:
-                                sample_dict[no_underscore] = sample_dict[key]
                     try:
                         if component == "disk":
                             mass_samples.append(mass_integrator(r, 2 * r, sample_dict))
@@ -1095,29 +1063,26 @@ def calculate_component_statistics(
     if "disk" in results:
         summary = results["disk"].summary
         if summary is not None:
-            if "R_d" in summary:
-                stats["disk_scale_length"] = summary["R_d"]
-            elif "R_d1" in summary:
-                stats["disk_scale_length"] = summary["R_d1"]
-                if "R_d2" in summary:
-                    stats["thick_disk_scale_length"] = summary["R_d2"]
-
-            if "z_0" in summary:
-                stats["disk_scale_height"] = summary["z_0"]
+            if "Rd1" in summary:
+                stats["disk_scale_length"] = summary["Rd1"]
+            if "Rd2" in summary:
+                stats["thick_disk_scale_length"] = summary["Rd2"]
+            if "z0" in summary:
+                stats["disk_scale_height"] = summary["z0"]
 
     if "bulge" in results:
         summary = results["bulge"].summary
-        if summary is not None and "r_s" in summary:
-            stats["bulge_scale_radius"] = summary["r_s"]
+        if summary is not None and "rs" in summary:
+            stats["bulge_scale_radius"] = summary["rs"]
 
-    # Halo concentration (c = r_vir / r_s)
+    # Halo concentration (c = R200 / rs)
     if "halo" in results:
         summary = results["halo"].summary
-        if summary is not None and "r_s" in summary and metadata_dict is not None:
-            stats["halo_scale_radius"] = summary["r_s"]
+        if summary is not None and "rs" in summary and metadata_dict is not None:
+            stats["halo_scale_radius"] = summary["rs"]
             R200 = metadata_dict["R200_kpc"]  # No fallback needed
             stats["halo_concentration"] = (
-                R200 / summary["r_s"] if summary["r_s"] > 0 else np.nan
+                R200 / summary["rs"] if summary["rs"] > 0 else np.nan
             )
 
     # Goodness of fit summary

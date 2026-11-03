@@ -13,6 +13,7 @@ from .models import (
     double_exp_model,
     exp_cutoff,
     hernquist_density,
+    linear_params,
     nfw_density,
     only_core,
     single_disk_flaring,
@@ -297,26 +298,27 @@ def fit_general_emcee(
                 log_model = np.log10(model)
                 sigma_log_measured = uncertainties_fit / (data_fit * np.log(10))
                 # Combine measured uncertainty with intrinsic scatter
-                sigma_log = np.sqrt(sigma_log_measured**2 + sigma_extra**2)
-                chi2 = ((log_data - log_model) / sigma_log) ** 2
+                sigma = np.sqrt(sigma_log_measured**2 + sigma_extra**2)
+                chi2 = ((log_data - log_model) / sigma) ** 2
             else:
                 # Fit in linear space
                 # Combine measured uncertainty with intrinsic scatter
-                sigma_total = np.sqrt(uncertainties_fit**2 + sigma_extra**2)
-                chi2 = ((data_fit - model) / sigma_total) ** 2
+                sigma = np.sqrt(uncertainties_fit**2 + sigma_extra**2)
+                chi2 = ((data_fit - model) / sigma) ** 2
         else:
             # FALLBACK: use old fixed 10% if no uncertainties provided
             if use_log_space:
                 log_data = np.log10(data_fit)
                 log_model = np.log10(model)
-                sigma_log = np.sqrt((fixed_uncertainty**2 + sigma_extra**2))
-                chi2 = ((log_data - log_model) / sigma_log) ** 2
+                sigma = np.sqrt((fixed_uncertainty**2 + sigma_extra**2))
+                chi2 = ((log_data - log_model) / sigma) ** 2
             else:
-                sigma_total = np.sqrt((0.05 * data_fit) ** 2 + sigma_extra**2)
-                chi2 = ((data_fit - model) / sigma_total) ** 2
+                sigma = np.sqrt((0.05 * data_fit) ** 2 + sigma_extra**2)
+                chi2 = ((data_fit - model) / sigma) ** 2
 
-        # Return weighted log-likelihood
-        return -0.5 * np.sum(weights_fit * chi2)
+        # Return weighted log-likelihood; the log(sigma) term stops the
+        # fitted scatter (log_sigma) from running off to its upper bound
+        return -0.5 * np.sum(weights_fit * (chi2 + 2 * np.log(sigma)))
 
     def log_posterior(theta):
         lp = log_prior(theta)
@@ -441,7 +443,6 @@ def fit_general_emcee(
             # 'sampler': sampler,
             "rhat": rhat,
             "n_eff": n_eff,
-            "_param_names": model_param_names + ["log_sigma"],
         }
 
         # Add individual parameter summaries
@@ -451,26 +452,8 @@ def fit_general_emcee(
 
         summary["sigma"] = np.exp(medians[-1])
 
-        # Standardize parameter names for backward compatibility
-        # This ensures models can access params with or without underscores
-        # and automatically converts log10_X parameters to linear scale
-        for pname in list(summary.keys()):
-            if pname.startswith("log10_"):
-                # Add linear version: log10_rho0 → rho0 = 10^(log10_rho0)
-                base_name = pname.replace("log10_", "")
-                summary[base_name] = 10 ** summary[pname]
-                # Also convert error bars to linear scale
-                if f"{pname}_err" in summary:
-                    summary[f"{base_name}_err"] = 10 ** summary[f"{pname}_err"]
-
-            # Handle underscore variations for flexible parameter access
-            # Examples: rho_0 → rho0, r_s → rs, R_d1 → Rd1
-            if "_" in pname and not pname.endswith("_err"):
-                no_underscore = pname.replace("_", "")
-                if no_underscore not in summary:
-                    summary[no_underscore] = summary[pname]
-                    if f"{pname}_err" in summary:
-                        summary[f"{no_underscore}_err"] = summary[f"{pname}_err"]
+        # Add linear values of log10_ parameters (log10_rs -> rs, rs_err)
+        summary = linear_params(summary)
 
         return flat_samples, summary
     else:
@@ -571,6 +554,7 @@ def fit_disk_emcee(
     weights: Optional[np.ndarray] = None,
     uncertainties: Optional[np.ndarray] = None,
     soft_priors: Optional[Callable] = None,
+    z_min: float = 0.0,
     **kwargs,
 ):
     """
@@ -587,15 +571,15 @@ def fit_disk_emcee(
     z_max : float
         Vertical limit for fitting region (default 1.0 kpc).
     bounds : dict, optional
-        Parameter bounds: {'log10_rho0': (min, max), 'R_d': (min, max),
-                          'z_0': (min, max), 'log_sigma': (min, max)}.
-        Default: {'log10_rho0': (6, 12), 'R_d': (2, 15),
-                  'z_0': (0.01, 2.0), 'log_sigma': (-10, 1)}.
+        Parameter bounds: {'log10_rho0': (min, max), 'Rd': (min, max),
+                          'z0': (min, max), 'log_sigma': (min, max)}.
+        Default: {'log10_rho0': (6, 12), 'Rd': (2, 15),
+                  'z0': (0.01, 2.0), 'log_sigma': (-10, 1)}.
     p0 : dict, optional
-        Parameter guesses: {'log10_rho0': log10_rho0, 'R_d': R_d,
-                            'z_0': z_0}
-        Default: {'log10_rho0': log10(median(rho)), 'R_d': 7,
-                  'z_0': 0.5}
+        Parameter guesses: {'log10_rho0': log10_rho0, 'Rd': Rd,
+                            'z0': z0}
+        Default: {'log10_rho0': log10(median(rho)), 'Rd': 7,
+                  'z0': 0.5}
     weights : array_like, optional
         Weights for each data point. Higher weight = more influence.
         Default: None (uniform weights).
@@ -611,24 +595,24 @@ def fit_disk_emcee(
     Returns
     -------
     samples : ndarray
-        Posterior samples [log10(rho_0), R_d, z_0, log_sigma].
+        Posterior samples [log10(rho0), Rd, z0, log_sigma].
     summary : dict
         Contains median and percentile values for each parameter.
     """
     # -------------------------------------------------
     # Set default bounds if not provided
     # -------------------------------------------------
-    param_names = ["log10_rho01", "R_d1", "z_0"]
+    param_names = ["log10_rho01", "Rd1", "z0"]
 
     if bounds is None:
         bounds = {
             "log10_rho01": (6, 12),
-            "R_d1": (2, 15),
-            "z_0": (0.01, 2.0),
+            "Rd1": (2, 15),
+            "z0": (0.01, 2.0),
             "log_sigma": (-10, 1),
         }
 
-    data_range = {"R": R_range, "z": (0.3, z_max)}
+    data_range = {"R": R_range, "z": (z_min, z_max)}
 
     def log_disk_density(R, z, log10_rho0, Rd, z0):
         return disk_density(R, z, 10**log10_rho0, Rd, z0)
@@ -698,8 +682,8 @@ def fit_halo_emcee(
         after burn-in removal and thinning by factor of 10.
     summary : dict
         Dictionary containing:
-        - 'rho_0': median rho_0 in Msun/kpc^3
-        - 'r_s': median scale radius in kpc
+        - 'rho0': median rho0 in Msun/kpc^3
+        - 'rs': median scale radius in kpc
         - 'sigma': median extra scatter parameter
         - 'samples': reference to flat_samples array
         - 'acceptance_fraction': mean acceptance fraction
@@ -793,8 +777,8 @@ def fit_two_power_emcee(
         after burn-in removal and thinning by factor of 10.
     summary : dict
         Dictionary containing:
-        - 'rho_0': median rho_0 in Msun/kpc^3
-        - 'r_s': median scale radius in kpc
+        - 'rho0': median rho0 in Msun/kpc^3
+        - 'rs': median scale radius in kpc
         - 'alpha': inner power-law slope when r << rs model behaves like r^-alpha
         - 'beta': outer power-law slope when r >> rs model behaves like r^-beta
         - 'sigma': median extra scatter parameter
@@ -893,8 +877,8 @@ def fit_three_power_emcee(
         after burn-in removal and thinning by factor of 10.
     summary : dict
         Dictionary containing:
-        - 'rho_0': median rho_0 in Msun/kpc^3
-        - 'r_s': median scale radius in kpc
+        - 'rho0': median rho0 in Msun/kpc^3
+        - 'rs': median scale radius in kpc
         - 'alpha': inner power-law slope when r << rs model behaves like r^-alpha
         - 'beta': outer power-law slope when r >> rs model behaves like r^-beta
         - 'gamma': transition sharpness when r ~ rs - controls how smooth the transition is.
@@ -951,12 +935,13 @@ def fit_double_exponential_disk_emcee(
     weights: Optional[np.ndarray] = None,
     uncertainties: Optional[np.ndarray] = None,
     soft_priors: Optional[Callable] = None,
+    z_min: float = 0.0,
     **kwargs,
 ):
     """
     Fit a double exponential radial disk profile using emcee MCMC sampler.
 
-    rho(R, z) = rho_01 * exp(-R/R_d1) + rho_02 * exp(-R/R_d2) * sech^2(z / z0)
+    rho(R, z) = rho01 * exp(-R/Rd1) + rho02 * exp(-R/Rd2) * sech^2(z / z0)
 
     Parameters
     ----------
@@ -970,16 +955,16 @@ def fit_double_exponential_disk_emcee(
         Parameter bounds: {
             'log10_rho01': (min, max),
             'log10_rho02': (min, max),
-            'R_d1': (min, max),
-            'R_d2': (min, max),
+            'Rd1': (min, max),
+            'Rd2': (min, max),
             'log10_z0': (min, max),
             'log_sigma': (min, max)
         }
         Default: {
             'log10_rho01': (5, 11),
             'log10_rho02': (5, 11),
-            'R_d1': (0.5, 15),
-            'R_d2': (0.5, 20),
+            'Rd1': (0.5, 15),
+            'Rd2': (0.5, 20),
             'log10_z0': (0.01, 3),
             'log_sigma': (-10, 1)
         }
@@ -987,8 +972,8 @@ def fit_double_exponential_disk_emcee(
         Parameter guesses: {
             'log10_rho01': log10_rho01,
             'log10_rho02': log10_rho02,
-            'R_d1': R_d1,
-            'R_d2': R_d2,
+            'Rd1': Rd1,
+            'Rd2': Rd2,
             'log10_z0': log10_z0
         }
         Default: Estimated from data
@@ -1007,7 +992,7 @@ def fit_double_exponential_disk_emcee(
     Returns
     -------
     samples : ndarray
-        Posterior samples [log10_rho01, log10_rho02, R_d1, R_d2, z_0, log_sigma]
+        Posterior samples [log10_rho01, log10_rho02, Rd1, Rd2, z0, log_sigma]
     summary : dict
         Contains median and percentile values for each parameter
     """
@@ -1018,8 +1003,8 @@ def fit_double_exponential_disk_emcee(
         bounds = {
             "log10_rho01": (0, 13),  # wide but finite
             "log10_rho02": (0, 13),
-            "R_d1": (0.2, 12.0),
-            "R_d2": (0.5, 40.0),  # allow outer disk but penalize in prior below
+            "Rd1": (0.2, 12.0),
+            "Rd2": (0.5, 40.0),  # allow outer disk but penalize in prior below
             "log10_z0": (
                 -2.5,
                 0.7,
@@ -1027,9 +1012,9 @@ def fit_double_exponential_disk_emcee(
             "log_sigma": (-10, 1),
         }
 
-    param_names = ["log10_rho01", "log10_rho02", "R_d1", "R_d2", "log10_z0"]
+    param_names = ["log10_rho01", "log10_rho02", "Rd1", "Rd2", "log10_z0"]
 
-    data_range = {"R": R_range, "z": (0.3, z_max)}
+    data_range = {"R": R_range, "z": (z_min, z_max)}
 
     def double_exp(R, z, log10_rho01, log10_rho02, Rd1, Rd2, log10_z0):
         return double_exp_model(
@@ -1107,9 +1092,9 @@ def fit_cored_bulge_emcee(
         after burn-in removal and thinning by factor of 10.
     summary : dict
         Dictionary containing:
-        - 'rho_0': median rho_0 in Msun/kpc^3
-        - 'r_s': median scale radius in kpc
-        - 'r_c': core scale radius in kpc
+        - 'rho0': median rho0 in Msun/kpc^3
+        - 'rs': median scale radius in kpc
+        - 'rc': core scale radius in kpc
         - 'alpha': inner power-law slope when r << rs model behaves like r^-alpha
         - 'beta': outer power-law slope when r >> rs model behaves like r^-beta
         - 'sigma': median extra scatter parameter
@@ -1171,7 +1156,7 @@ def fit_exp_emcee(
     """
     Fit an exponential model to bulge component but should be general using MCMC sampling.
 
-    rho(r) = rho0 * exp(-r / r_s)
+    rho(r) = rho0 * exp(-r / rs)
 
     Parameters
     ----------
@@ -1208,8 +1193,8 @@ def fit_exp_emcee(
         after burn-in removal and thinning by factor of 10.
     summary : dict
         Dictionary containing:
-        - 'rho_0': median rho_0 in Msun/kpc^3
-        - 'r_s': median scale radius in kpc
+        - 'rho0': median rho0 in Msun/kpc^3
+        - 'rs': median scale radius in kpc
         - 'sigma': median extra scatter parameter
         - 'samples': reference to flat_samples array
         - 'acceptance_fraction': mean acceptance fraction
@@ -1268,7 +1253,7 @@ def fit_exp_cutoff_emcee(
     This model is useful for components with a central core and exponential
     decay at large radii:
 
-        rho(r) = rho_0 * exp(-r / r_cutoff) / (r_core + r)^alpha
+        rho(r) = rho0 * exp(-r / rcutoff) / (rcore + r)^alpha
 
     Parameters
     ----------
@@ -1281,23 +1266,23 @@ def fit_exp_cutoff_emcee(
     bounds : dict, optional
         Parameter bounds: {
             'log10_rho0': (min, max),
-            'r_core': (min, max),
-            'r_cutoff': (min, max),
+            'rcore': (min, max),
+            'rcutoff': (min, max),
             'alpha': (min, max),
             'log_sigma': (min, max)
         }.
         Default: {
             'log10_rho0': (6, 11),
-            'r_core': (0.1, 1.5),
-            'r_cutoff': (0.5, 2.0),
+            'rcore': (0.1, 1.5),
+            'rcutoff': (0.5, 2.0),
             'alpha': (0, 4),
             'log_sigma': (-10, 1.1)
         }
     p0 : dict, optional
         Initial parameter guesses: {
             'log10_rho0': log10_rho0,
-            'r_core': r_core,
-            'r_cutoff': r_cutoff,
+            'rcore': rcore,
+            'rcutoff': rcutoff,
             'alpha': alpha
         }.
         If None, uses midpoint of bounds.
@@ -1316,26 +1301,26 @@ def fit_exp_cutoff_emcee(
     Returns
     -------
     samples : ndarray
-        Posterior samples [log10_rho0, r_core, r_cutoff, alpha, log_sigma].
+        Posterior samples [log10_rho0, rcore, rcutoff, alpha, log_sigma].
     summary : dict
         Contains median values, uncertainties, and diagnostics for each parameter.
     """
-    param_names = ["log10_rho0", "r_core", "r_cutoff", "alpha"]
+    param_names = ["log10_rho0", "rcore", "rcutoff", "alpha"]
 
     if bounds is None:
         bounds = {
             "log10_rho0": (6, 11),
-            "r_core": (0.1, 1.5),
-            "r_cutoff": (0.5, 2.0),
+            "rcore": (0.1, 1.5),
+            "rcutoff": (0.5, 2.0),
             "alpha": (0, 4),
             "log_sigma": (-10, 1.1),
         }
 
     data_range = {"r": r_range}
 
-    def log_exp_cutoff(r, log10_rho0, r_core, r_cutoff, alpha):
+    def log_exp_cutoff(r, log10_rho0, rcore, rcutoff, alpha):
         rho0 = 10**log10_rho0
-        return exp_cutoff(r, rho0, r_core, r_cutoff, alpha)
+        return exp_cutoff(r, rho0, rcore, rcutoff, alpha)
 
     return fit_general_emcee(
         coords=(r,),
@@ -1365,6 +1350,7 @@ def fit_double_disk_flaring_emcee(
     weights: Optional[np.ndarray] = None,
     uncertainties: Optional[np.ndarray] = None,
     soft_priors: Optional[Callable] = None,
+    z_min: float = 0.0,
     **kwargs,
 ):
     """
@@ -1373,7 +1359,7 @@ def fit_double_disk_flaring_emcee(
     This model describes a disk with vertically varying scale height,
     useful for representing stellar disks with flaring structure:
 
-        rho(R, z) = disk_flaring(R, z, rho01, rho02, R_d1, R_d2, A, B)
+        rho(R, z) = disk_flaring(R, z, rho01, rho02, Rd1, Rd2, A, B)
 
     where the scale height increases with radius as h(R) = h0 * (R/R0)^A.
 
@@ -1393,8 +1379,8 @@ def fit_double_disk_flaring_emcee(
         Parameter bounds: {
             'log10_rho01': (min, max),
             'log10_rho02': (min, max),
-            'R_d1': (min, max),
-            'R_d2': (min, max),
+            'Rd1': (min, max),
+            'Rd2': (min, max),
             'A': (min, max),     # flaring exponent
             'B': (min, max),     # additional shape parameter
             'log_sigma': (min, max)
@@ -1402,8 +1388,8 @@ def fit_double_disk_flaring_emcee(
         Default: {
             'log10_rho01': (3, 10),
             'log10_rho02': (1, 8),
-            'R_d1': (0.1, 12.0),
-            'R_d2': (5, 50.0),
+            'Rd1': (0.1, 12.0),
+            'Rd2': (5, 50.0),
             'A': (0, 1),
             'B': (0.1, 5),
             'log_sigma': (-10, 1.1)
@@ -1412,8 +1398,8 @@ def fit_double_disk_flaring_emcee(
         Initial parameter guesses: {
             'log10_rho01': log10_rho01,
             'log10_rho02': log10_rho02,
-            'R_d1': R_d1,
-            'R_d2': R_d2,
+            'Rd1': Rd1,
+            'Rd2': Rd2,
             'A': A,
             'B': B
         }.
@@ -1433,28 +1419,28 @@ def fit_double_disk_flaring_emcee(
     Returns
     -------
     samples : ndarray
-        Posterior samples [log10_rho01, log10_rho02, R_d1, R_d2, A, B, log_sigma].
+        Posterior samples [log10_rho01, log10_rho02, Rd1, Rd2, A, B, log_sigma].
     summary : dict
         Contains median values, uncertainties, and diagnostics for each parameter.
     """
-    param_names = ["log10_rho01", "log10_rho02", "R_d1", "R_d2", "A", "B"]
+    param_names = ["log10_rho01", "log10_rho02", "Rd1", "Rd2", "A", "B"]
     if bounds is None:
         bounds = {
             "log10_rho01": (3, 10),
             "log10_rho02": (1, 8),
-            "R_d1": (0.1, 12.0),
-            "R_d2": (5, 50.0),
+            "Rd1": (0.1, 12.0),
+            "Rd2": (5, 50.0),
             "A": (0, 1),
             "B": (0.1, 5),
             "log_sigma": (-10, 1.1),
         }
 
-    data_range = {"R": R_range, "z": (0.3, z_max)}
+    data_range = {"R": R_range, "z": (z_min, z_max)}
 
-    def disk_flaring_log(R, z, log10_rho01, log10_rho02, R_d1, R_d2, A, B):
+    def disk_flaring_log(R, z, log10_rho01, log10_rho02, Rd1, Rd2, A, B):
         """Wrapper for disk_flaring model that handles log-space parameters."""
         return double_disk_flaring(
-            R, z, 10**log10_rho01, 10**log10_rho02, R_d1, R_d2, A, B
+            R, z, 10**log10_rho01, 10**log10_rho02, Rd1, Rd2, A, B
         )
 
     return fit_general_emcee(
@@ -1485,6 +1471,7 @@ def fit_single_disk_flaring_emcee(
     weights: Optional[np.ndarray] = None,
     uncertainties: Optional[np.ndarray] = None,
     soft_priors: Optional[Callable] = None,
+    z_min: float = 0.0,
     **kwargs,
 ):
     """
@@ -1493,7 +1480,7 @@ def fit_single_disk_flaring_emcee(
     This model describes a disk with vertically varying scale height,
     useful for representing stellar disks with flaring structure:
 
-        rho(R, z) = single_disk_flaring(R, z, rho01, R_d1, A, B)
+        rho(R, z) = single_disk_flaring(R, z, rho01, Rd1, A, B)
 
     where the scale height increases with radius as h(R) = A*R + B.
 
@@ -1512,14 +1499,14 @@ def fit_single_disk_flaring_emcee(
     bounds : dict, optional
         Parameter bounds: {
             'log10_rho01': (min, max),
-            'R_d1': (min, max),
+            'Rd1': (min, max),
             'A': (min, max),     # flaring exponent
             'B': (min, max),     # additional shape parameter
             'log_sigma': (min, max)
         }.
         Default: {
             'log10_rho01': (3, 10),
-            'R_d1': (0.1, 12.0),
+            'Rd1': (0.1, 12.0),
             'A': (0, 1),
             'B': (0.1, 5),
             'log_sigma': (-10, 1.1)
@@ -1527,7 +1514,7 @@ def fit_single_disk_flaring_emcee(
     p0 : dict, optional
         Initial parameter guesses: {
             'log10_rho01': log10_rho01,
-            'R_d1': R_d1,
+            'Rd1': Rd1,
             'A': A,
             'B': B
         }.
@@ -1547,25 +1534,25 @@ def fit_single_disk_flaring_emcee(
     Returns
     -------
     samples : ndarray
-        Posterior samples [log10_rho01, R_d1, A, B, log_sigma].
+        Posterior samples [log10_rho01, Rd1, A, B, log_sigma].
     summary : dict
         Contains median values, uncertainties, and diagnostics for each parameter.
     """
-    param_names = ["log10_rho01", "R_d1", "A", "B"]
+    param_names = ["log10_rho01", "Rd1", "A", "B"]
     if bounds is None:
         bounds = {
             "log10_rho01": (3, 10),
-            "R_d1": (0.1, 12.0),
+            "Rd1": (0.1, 12.0),
             "A": (0, 1),
             "B": (0.1, 5),
             "log_sigma": (-10, 1.1),
         }
 
-    data_range = {"R": R_range, "z": (0.3, z_max)}
+    data_range = {"R": R_range, "z": (z_min, z_max)}
 
-    def disk_flaring_log(R, z, log10_rho01, R_d1, A, B):
+    def disk_flaring_log(R, z, log10_rho01, Rd1, A, B):
         """Wrapper for disk_flaring model that handles log-space parameters."""
-        return single_disk_flaring(R, z, 10**log10_rho01, R_d1, A, B)
+        return single_disk_flaring(R, z, 10**log10_rho01, Rd1, A, B)
 
     return fit_general_emcee(
         coords=(R, z),

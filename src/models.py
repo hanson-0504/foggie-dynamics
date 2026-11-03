@@ -16,6 +16,22 @@ MassIntegrator = Callable[..., float]
 ModelEquation = Callable[..., str]
 
 
+def linear_params(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Copy of params with the linear value of each log10_ parameter added.
+
+    Naming convention: parameter names have no underscores (rho0, rs, rc,
+    Rd1, z0, rcore, ...). A parameter sampled in log10 space is named
+    log10_<name>, and its linear value is <name>:
+    log10_rs -> rs = 10**log10_rs, log10_rs_err -> rs_err.
+    """
+    out = dict(params)
+    for name, value in params.items():
+        if name.startswith("log10_"):
+            out[name[len("log10_"):]] = 10 ** np.asarray(value)
+    return out
+
+
 class ModelRegistry:
     """Registry of available density models and their fitting functions."""
 
@@ -32,14 +48,21 @@ class ModelRegistry:
         mass_integrator: MassIntegrator,
         profile_eq: ModelEquation,
     ):
-        """Register a new model."""
+        """
+        Register a new model.
+
+        param_names are the sampled parameter names, in the fitter's order
+        (= MCMC sample columns, before log_sigma, and the config bounds/p0 keys).
+        evaluator, mass_integrator and profile_eq use the linear names; they
+        are wrapped with linear_params, so callers can pass sampled values.
+        """
         cls._models[name] = {
             "geometry": geometry,
             "fitter": fitter,
             "param_names": param_names,
-            "evaluator": evaluator,
-            "mass_integrator": mass_integrator,
-            "profile_eq": profile_eq,
+            "evaluator": lambda coords, s: evaluator(coords, linear_params(s)),
+            "mass_integrator": lambda *args: mass_integrator(*args[:-1], linear_params(args[-1])),
+            "profile_eq": lambda s: profile_eq(linear_params(s)),
         }
 
     @classmethod
@@ -149,10 +172,11 @@ class ModelRegistry:
             z = coords[1]
             rho = data
             R_range = data_range[0]  # (min, max)
-            z_max = data_range[1][1]  # upper limit from (0, z_max)
+            z_min, z_max = data_range[1]
 
             args = (R, z, rho, R_range, z_max, logger)
             kwargs = {
+                "z_min": z_min,
                 "bounds": bounds,
                 "p0": p0,
                 "weights": weights,
@@ -167,135 +191,38 @@ class ModelRegistry:
         return args, kwargs
 
 
-# Helper functions for complex profile equation formatting
-def _format_double_exp_eq(params):
-    """Format Double-Exponential profile equation with parameter name variations."""
-    # Handle both old naming (sig1, rho_01) and new naming (log10_rho01)
-    rho01 = params.get("sig1") or params.get("rho_01")
-    if rho01 is None and "log10_rho01" in params:
-        rho01 = 10 ** params["log10_rho01"]
-    rho01_str = f"{rho01:.3e}" if rho01 is not None else "N/A"
-
-    rho02 = params.get("sig2") or params.get("rho_02")
-    if rho02 is None and "log10_rho02" in params:
-        rho02 = 10 ** params["log10_rho02"]
-    rho02_str = f"{rho02:.3e}" if rho02 is not None else "N/A"
-
-    Rd1 = params.get("Rd1") or params.get("R_d1")
-    Rd1_str = f"{Rd1:.3f}" if Rd1 is not None else "N/A"
-
-    Rd2 = params.get("Rd2") or params.get("R_d2")
-    Rd2_str = f"{Rd2:.3f}" if Rd2 is not None else "N/A"
-
-    z0 = params.get("z0") or params.get("z_0") or params.get("B")
-    z0_str = f"{z0:.3f}" if z0 is not None else "N/A"
-
-    return (
-        f"rho(R, z) = [rho_inner_0 * exp(-R/R_inner_d) + rho_outer_0 * exp(-R/R_outer_d)] * sech^2(z/z_0)\n"
-        f"  rho_inner_0 = {rho01_str} Msun/kpc^3\n"
-        f"  R_inner_d   = {Rd1_str} kpc\n"
-        f"  rho_outer_0 = {rho02_str} Msun/kpc^3\n"
-        f"  R_outer_d   = {Rd2_str} kpc\n"
-        f"  z_0         = {z0_str} kpc"
-    )
-
-
-def _format_disk_flaring_eq(params):
-    """Format Disk-Flaring profile equation for both single and double disk models."""
-    # Check if this is a single-disk or double-disk model
-    # Single disk has log10_rho01 and R_d1 (not log10_rho02 and R_d2)
-    is_single_disk = (
-        ("log10_rho01" in params and "log10_rho02" not in params)
-        or ("rho0" in params or "rho_0" in params)
-        and "Rd" in params
-    )
-
-    # Get flaring parameters (common to both models)
-    A = params.get("A")
-    A_str = f"{A:.3f}" if A is not None else "N/A"
-
-    B = params.get("B")
-    B_str = f"{B:.3f}" if B is not None else "N/A"
-
-    if is_single_disk:
-        # Single disk model: log10_rho01, R_d1, A, B
-        rho0 = params.get("rho0") or params.get("rho_0")
-        if rho0 is None and "log10_rho01" in params:
-            rho0 = 10 ** params["log10_rho01"]
-        elif rho0 is None and "log10_rho0" in params:  # Legacy support
-            rho0 = 10 ** params["log10_rho0"]
-        rho0_str = f"{rho0:.3e}" if rho0 is not None else "N/A"
-
-        Rd = params.get("R_d1") or params.get("Rd1") or params.get("Rd")
-        Rd_str = f"{Rd:.3f}" if Rd is not None else "N/A"
-
-        return (
-            f"rho(R,z) = rho_0 * exp(-R/R_d) * sech^2(z/[A*R + B])\n"
-            f"  rho_0 = {rho0_str} Msun/kpc^3\n"
-            f"  R_d   = {Rd_str} kpc\n"
-            f"  A     = {A_str}\n"
-            f"  B     = {B_str} kpc"
-        )
-    else:
-        # Double disk model: rho01, rho02, Rd1, Rd2, A, B
-        rho01 = params.get("rho_01")
-        if rho01 is None and "log10_rho01" in params:
-            rho01 = 10 ** params["log10_rho01"]
-        rho01_str = f"{rho01:.3e}" if rho01 is not None else "N/A"
-
-        rho02 = params.get("rho_02")
-        if rho02 is None and "log10_rho02" in params:
-            rho02 = 10 ** params["log10_rho02"]
-        rho02_str = f"{rho02:.3e}" if rho02 is not None else "N/A"
-
-        Rd1 = params.get("R_d1") or params.get("Rd1")
-        Rd1_str = f"{Rd1:.3f}" if Rd1 is not None else "N/A"
-
-        Rd2 = params.get("R_d2") or params.get("Rd2")
-        Rd2_str = f"{Rd2:.3f}" if Rd2 is not None else "N/A"
-
-        return (
-            f"rho(R,z) = [rho_inner_0 * exp(-R/R_inner_d) + rho_outer_0 * exp(-R/R_outer_d)] * sech^2(z/[A*R + B])\n"
-            f"  rho_inner_0 = {rho01_str} Msun/kpc^3\n"
-            f"  R_inner_d   = {Rd1_str} kpc\n"
-            f"  rho_outer_0 = {rho02_str} Msun/kpc^3\n"
-            f"  R_outer_d   = {Rd2_str} kpc\n"
-            f"  A           = {A_str}\n"
-            f"  B           = {B_str} kpc"
-        )
-
-
 # Register all models
+#
+# param_names: sampled names (fitter order). Evaluators, mass integrators and
+# profile equations receive linear_params(...) and use the linear names.
 ModelRegistry.register(
     "Hernquist",
     geometry="spherical",
     fitter="fit_bulge_emcee",
-    param_names=["rho0", "rs"],
-    evaluator=lambda coords, s: np.asarray(
-        hernquist_density(coords[0], s["rho0"], s["rs"])
-    ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        hernquist_density, r, summary["rho0"], summary["rs"]
+    param_names=["log10_rho0", "log10_rs"],
+    evaluator=lambda coords, s: np.asarray(hernquist_density(coords[0], s["rho0"], s["rs"])),
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        hernquist_density, r, s["rho0"], s["rs"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / [(r/r_s) * (1 + r/r_s)^3]\n"
-        f"  rho_0 = {params.get('rho0', params.get('rho0', 'N/A')):.3e} Msun/kpc^3\n"
-        f"  r_s   = {params.get('rs', params.get('rs', 'N/A')):.3f} kpc"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / [(r/rs) * (1 + r/rs)^3]\n"
+        f"  rho0 = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs   = {p['rs']:.3f} kpc"
     ),
 )
 ModelRegistry.register(
     "NFW",
     geometry="spherical",
     fitter="fit_halo_emcee",
-    param_names=["rho0", "rs"],
+    param_names=["log10_rho0", "log10_rs"],
     evaluator=lambda coords, s: np.asarray(nfw_density(coords[0], s["rho0"], s["rs"])),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        nfw_density, r, summary["rho0"], summary["rs"]
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        nfw_density, r, s["rho0"], s["rs"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / [(r/r_s) * (1 + r/r_s)^2]\n"
-        f"  rho_0 = {params.get('rho0', params.get('rho0', 'N/A')):.3e} Msun/kpc^3\n"
-        f"  r_s   = {params.get('rs', params.get('rs', 'N/A')):.3f} kpc"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / [(r/rs) * (1 + r/rs)^2]\n"
+        f"  rho0 = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs   = {p['rs']:.3f} kpc"
     ),
 )
 ModelRegistry.register(
@@ -304,125 +231,114 @@ ModelRegistry.register(
     fitter="fit_two_power_emcee",
     param_names=["log10_rho0", "log10_rs", "alpha", "beta"],
     evaluator=lambda coords, s: np.asarray(
-        two_power_model(
-            coords[0], 10 ** s["log10_rho0"], 10 ** s["log10_rs"], s["alpha"], s["beta"]
-        )
+        two_power_model(coords[0], s["rho0"], s["rs"], s["alpha"], s["beta"])
     ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        two_power_model,
-        r,
-        10 ** summary["log10_rho0"],
-        10 ** summary["log10_rs"],
-        summary["alpha"],
-        summary["beta"],
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        two_power_model, r, s["rho0"], s["rs"], s["alpha"], s["beta"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / [(r/r_s)^alpha * (1 + r/r_s)^(beta-alpha)]\n"
-        f"  rho_0 = {10**params.get('log10_rho0', 0):.3e} Msun/kpc^3\n"
-        f"  r_s   = {10**params.get('log10_rs', 0):.3f} kpc\n"
-        f"  alpha = {params.get('alpha', 'N/A'):.3f}\n"
-        f"  beta  = {params.get('beta', 'N/A'):.3f}"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / [(r/rs)^alpha * (1 + r/rs)^(beta-alpha)]\n"
+        f"  rho0  = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs    = {p['rs']:.3f} kpc\n"
+        f"  alpha = {p['alpha']:.3f}\n"
+        f"  beta  = {p['beta']:.3f}"
     ),
 )
 ModelRegistry.register(
     "Single-Exponential",
     geometry="cylindrical",
     fitter="fit_disk_emcee",
-    param_names=["rho01", "Rd1", "z0"],
+    param_names=["log10_rho01", "Rd1", "z0"],
     evaluator=lambda coords, s: np.asarray(
         disk_density(coords[0], coords[1], s["rho01"], s["Rd1"], s["z0"])
     ),
-    mass_integrator=lambda R, z, summary: integrate_disk_mass(
-        R, z, summary["rho01"], summary["Rd1"], summary["z0"]
-    )[0],
-    profile_eq=lambda params: (
-        f"rho(R, z) = rho_0 * exp(-R/R_d) * sech^2(z/z_0)\n"
-        f"  rho_0 = {params.get('rho01', 'N/A'):.3e} Msun/kpc^3\n"
-        f"  R_d   = {params.get('Rd1', 'N/A'):.3f} kpc\n"
-        f"  z_0   = {params.get('z0', 'N/A'):.3f} kpc"
+    mass_integrator=lambda R, z, s: integrate_disk_mass(R, z, s["rho01"], s["Rd1"], s["z0"])[0],
+    profile_eq=lambda p: (
+        "rho(R, z) = rho01 * exp(-R/Rd1) * sech^2(z/z0)\n"
+        f"  rho01 = {p['rho01']:.3e} Msun/kpc^3\n"
+        f"  Rd1   = {p['Rd1']:.3f} kpc\n"
+        f"  z0    = {p['z0']:.3f} kpc"
     ),
 )
 ModelRegistry.register(
     "Double-Exponential",
     geometry="cylindrical",
     fitter="fit_double_exponential_disk_emcee",
-    param_names=["rho01", "rho02", "Rd1", "Rd2", "z0"],
+    param_names=["log10_rho01", "log10_rho02", "Rd1", "Rd2", "log10_z0"],
     evaluator=lambda coords, s: cast(
         np.ndarray,
         np.asarray(
             double_exp_model(
-                coords[0],
-                coords[1],
-                s["rho01"],
-                s["rho02"],
-                s["Rd1"],
-                s["Rd2"],
-                s["z0"],
+                coords[0], coords[1], s["rho01"], s["rho02"], s["Rd1"], s["Rd2"], s["z0"]
             )
         ),
     ),
-    mass_integrator=lambda R, z, summary: (
-        integrate_disk_mass(R, z, summary["rho01"], summary["Rd1"], summary["z0"])[0]
-        + integrate_disk_mass(R, z, summary["rho02"], summary["Rd2"], summary["z0"])[0]
+    mass_integrator=lambda R, z, s: (
+        integrate_disk_mass(R, z, s["rho01"], s["Rd1"], s["z0"])[0]
+        + integrate_disk_mass(R, z, s["rho02"], s["Rd2"], s["z0"])[0]
     ),
-    profile_eq=lambda params: _format_double_exp_eq(params),
+    profile_eq=lambda p: (
+        "rho(R, z) = [rho01 * exp(-R/Rd1) + rho02 * exp(-R/Rd2)] * sech^2(z/z0)\n"
+        f"  rho01 = {p['rho01']:.3e} Msun/kpc^3\n"
+        f"  Rd1   = {p['Rd1']:.3f} kpc\n"
+        f"  rho02 = {p['rho02']:.3e} Msun/kpc^3\n"
+        f"  Rd2   = {p['Rd2']:.3f} kpc\n"
+        f"  z0    = {p['z0']:.3f} kpc"
+    ),
 )
 ModelRegistry.register(
     "Exponential",
     geometry="spherical",
     fitter="fit_exp_emcee",
-    param_names=["rho0", "rs"],
+    param_names=["log10_rho0", "log10_rs"],
     evaluator=lambda coords, s: np.asarray(exp_model(coords[0], s["rho0"], s["rs"])),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        exp_model, r, summary["rho0"], summary["rs"]
-    )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 * exp(-r/r_s)\n"
-        f"  rho_0 = {params.get('rho0', params.get('rho_0', 'N/A')):.3e} Msun/kpc^3\n"
-        f"  r_s   = {params.get('rs', params.get('rs', 'N/A')):.3f} kpc"
+    mass_integrator=lambda r, s: integrate_spherical_mass(exp_model, r, s["rho0"], s["rs"])[0],
+    profile_eq=lambda p: (
+        "rho(r) = rho0 * exp(-r/rs)\n"
+        f"  rho0 = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs   = {p['rs']:.3f} kpc"
     ),
 )
 ModelRegistry.register(
     "Exp-Cutoff",
     geometry="spherical",
     fitter="fit_exp_cutoff_emcee",
-    param_names=["rho0", "r_core", "r_cutoff", "alpha"],
+    param_names=["log10_rho0", "rcore", "rcutoff", "alpha"],
     evaluator=lambda coords, s: np.asarray(
-        exp_cutoff(coords[0], s["rho0"], s["r_core"], s["r_cutoff"], s["alpha"])
+        exp_cutoff(coords[0], s["rho0"], s["rcore"], s["rcutoff"], s["alpha"])
     ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        exp_cutoff,
-        r,
-        summary["rho0"],
-        summary["r_core"],
-        summary["r_cutoff"],
-        summary["alpha"],
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        exp_cutoff, r, s["rho0"], s["rcore"], s["rcutoff"], s["alpha"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 * exp(-r / r_cutoff) / (r_core + r)^alpha\n"
-        f"  rho_0 = {params.get('rho0', 'N/A'):.3e} Msun/kpc^3\n"
-        f"  r_core = {params.get('r_core', 'N/A'):.3f} kpc\n"
-        f"  r_cutoff = {params.get('r_cutoff', 'N/A'):.3f} kpc\n"
-        f"  alpha = {params.get('alpha', 'N/A'):.3f}"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 * exp(-r/rcutoff) / (rcore + r)^alpha\n"
+        f"  rho0    = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rcore   = {p['rcore']:.3f} kpc\n"
+        f"  rcutoff = {p['rcutoff']:.3f} kpc\n"
+        f"  alpha   = {p['alpha']:.3f}"
     ),
 )
 ModelRegistry.register(
     "Single-Disk-Flaring",
     geometry="cylindrical",
     fitter="fit_single_disk_flaring_emcee",
-    param_names=["log10_rho01", "R_d1", "A", "B"],
+    param_names=["log10_rho01", "Rd1", "A", "B"],
     evaluator=lambda coords, s: cast(
         np.ndarray,
         np.asarray(
-            single_disk_flaring(
-                coords[0], coords[1], 10 ** s["log10_rho01"], s["R_d1"], s["A"], s["B"]
-            )
+            single_disk_flaring(coords[0], coords[1], s["rho01"], s["Rd1"], s["A"], s["B"])
         ),
     ),
-    mass_integrator=lambda R, z, summary: integrate_flaring_single_disk_mass(
-        R, z, 10 ** summary["log10_rho01"], summary["R_d1"], summary["A"], summary["B"]
+    mass_integrator=lambda R, z, s: integrate_flaring_single_disk_mass(
+        R, z, s["rho01"], s["Rd1"], s["A"], s["B"]
     )[0],
-    profile_eq=lambda params: _format_disk_flaring_eq(params),
+    profile_eq=lambda p: (
+        "rho(R, z) = rho01 * exp(-R/Rd1) * sech^2(z/[A*R + B])\n"
+        f"  rho01 = {p['rho01']:.3e} Msun/kpc^3\n"
+        f"  Rd1   = {p['Rd1']:.3f} kpc\n"
+        f"  A     = {p['A']:.3f}\n"
+        f"  B     = {p['B']:.3f} kpc"
+    ),
 )
 ModelRegistry.register(
     "Double-Disk-Flaring",
@@ -433,53 +349,41 @@ ModelRegistry.register(
         np.ndarray,
         np.asarray(
             double_disk_flaring(
-                coords[0],
-                coords[1],
-                10 ** s["log10_rho01"],
-                10 ** s["log10_rho02"],
-                s["Rd1"],
-                s["Rd2"],
-                s["A"],
-                s["B"],
+                coords[0], coords[1], s["rho01"], s["rho02"], s["Rd1"], s["Rd2"], s["A"], s["B"]
             )
         ),
     ),
-    mass_integrator=lambda R, z, summary: integrate_flaring_double_disk_mass(
-        R,
-        z,
-        10 ** summary["log10_rho01"],
-        10 ** summary["log10_rho02"],
-        summary["Rd1"],
-        summary["Rd2"],
-        summary["A"],
-        summary["B"],
+    mass_integrator=lambda R, z, s: integrate_flaring_double_disk_mass(
+        R, z, s["rho01"], s["rho02"], s["Rd1"], s["Rd2"], s["A"], s["B"]
     )[0],
-    profile_eq=lambda params: _format_disk_flaring_eq(params),
+    profile_eq=lambda p: (
+        "rho(R, z) = [rho01 * exp(-R/Rd1) + rho02 * exp(-R/Rd2)] * sech^2(z/[A*R + B])\n"
+        f"  rho01 = {p['rho01']:.3e} Msun/kpc^3\n"
+        f"  Rd1   = {p['Rd1']:.3f} kpc\n"
+        f"  rho02 = {p['rho02']:.3e} Msun/kpc^3\n"
+        f"  Rd2   = {p['Rd2']:.3f} kpc\n"
+        f"  A     = {p['A']:.3f}\n"
+        f"  B     = {p['B']:.3f} kpc"
+    ),
 )
 ModelRegistry.register(
     "Cored-bulge",
     geometry="spherical",
     fitter="fit_cored_bulge_emcee",
-    param_names=["rho0", "rs", "rc", "alpha", "beta"],
+    param_names=["log10_rho0", "log10_rs", "log10_rc", "alpha", "beta"],
     evaluator=lambda coords, s: np.asarray(
         cored_power_model(coords[0], s["rho0"], s["rs"], s["rc"], s["alpha"], s["beta"])
     ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        cored_power_model,
-        r,
-        summary["rho0"],
-        summary["rs"],
-        summary["rc"],
-        summary["alpha"],
-        summary["beta"],
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        cored_power_model, r, s["rho0"], s["rs"], s["rc"], s["alpha"], s["beta"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / [(r_c + r/r_s)^alpha * (1 + r/r_s)^(beta-alpha)]\n"
-        f"  rho_0 = {params.get('rho0', 'N/A'):.3e} Msun/kpc^3\n"
-        f"  r_s   = {params.get('rs', 'N/A'):.3f} kpc\n"
-        f"  r_c   = {params.get('rc', 'N/A'):.3f} kpc\n"
-        f"  alpha = {params.get('alpha', 'N/A'):.3f}\n"
-        f"  beta  = {params.get('beta', 'N/A'):.3f}"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / [(rc + r/rs)^alpha * (1 + r/rs)^(beta-alpha)]\n"
+        f"  rho0  = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs    = {p['rs']:.3f} kpc\n"
+        f"  rc    = {p['rc']:.3f} (dimensionless)\n"
+        f"  alpha = {p['alpha']:.3f}\n"
+        f"  beta  = {p['beta']:.3f}"
     ),
 )
 ModelRegistry.register(
@@ -488,82 +392,69 @@ ModelRegistry.register(
     fitter="fit_three_power_emcee",
     param_names=["log10_rho0", "log10_rs", "alpha", "beta", "gamma"],
     evaluator=lambda coords, s: np.asarray(
-        three_power_model(
-            coords[0],
-            10 ** s["log10_rho0"],
-            10 ** s["log10_rs"],
-            s["alpha"],
-            s["beta"],
-            s["gamma"],
-        )
+        three_power_model(coords[0], s["rho0"], s["rs"], s["alpha"], s["beta"], s["gamma"])
     ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        three_power_model,
-        r,
-        10 ** summary["log10_rho0"],
-        10 ** summary["log10_rs"],
-        summary["alpha"],
-        summary["beta"],
-        summary["gamma"],
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        three_power_model, r, s["rho0"], s["rs"], s["alpha"], s["beta"], s["gamma"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / [(r/r_s)^alpha * (1 + (r/r_s)^gamma)^((beta-alpha)/gamma)]\n"
-        f"  rho_0 = {10**params.get('log10_rho0', 0):.3e} Msun/kpc^3\n"
-        f"  r_s   = {10**params.get('log10_rs', 0):.3f} kpc\n"
-        f"  alpha = {params.get('alpha', 'N/A'):.3f}\n"
-        f"  beta  = {params.get('beta', 'N/A'):.3f}\n"
-        f"  gamma = {params.get('gamma', 'N/A'):.3f}"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / [(r/rs)^alpha * (1 + (r/rs)^gamma)^((beta-alpha)/gamma)]\n"
+        f"  rho0  = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs    = {p['rs']:.3f} kpc\n"
+        f"  alpha = {p['alpha']:.3f}\n"
+        f"  beta  = {p['beta']:.3f}\n"
+        f"  gamma = {p['gamma']:.3f}"
     ),
 )
 ModelRegistry.register(
     "Core-Only",
     geometry="spherical",
     fitter="fit_core_emcee",
-    param_names=["rho0", "rs", "rc", "alpha"],
+    param_names=["log10_rho0", "log10_rs", "log10_rc", "alpha"],
     evaluator=lambda coords, s: np.asarray(
-        s["rho0"] * (s["rc"] + coords[0] / s["rs"]) ** -s["alpha"]
+        only_core(coords[0], s["rho0"], s["rs"], s["rc"], s["alpha"])
     ),
-    mass_integrator=lambda r, summary: integrate_spherical_mass(
-        only_core, r, summary["rho0"], summary["rs"], summary["rc"], summary["alpha"]
+    mass_integrator=lambda r, s: integrate_spherical_mass(
+        only_core, r, s["rho0"], s["rs"], s["rc"], s["alpha"]
     )[0],
-    profile_eq=lambda params: (
-        f"rho(r) = rho_0 / (r_core + r / r_s)^alpha\n"
-        f"  rho_0  = {params.get('rho0', params.get('rho_0', 'N/A')):.3e} Msun/kpc^3\n"
-        f"  r_s    = {params.get('rs', params.get('rs', 'N/A')):.3f} kpc\n"
-        f"  r_core = {params.get('rc', params.get('r_c', 'N/A')):.3f} kpc\n"
-        f"  alpha  = {params.get('alpha', 'N/A'):.3f}"
+    profile_eq=lambda p: (
+        "rho(r) = rho0 / (rc + r/rs)^alpha\n"
+        f"  rho0  = {p['rho0']:.3e} Msun/kpc^3\n"
+        f"  rs    = {p['rs']:.3f} kpc\n"
+        f"  rc    = {p['rc']:.3f} (dimensionless)\n"
+        f"  alpha = {p['alpha']:.3f}"
     ),
 )
 
 
 # ---- density models -----
-def hernquist_density(r, rho_0, a):
+def hernquist_density(r, rho0, rs):
     """
     Spheroid models for bulge stellar components of the galaxy
 
     Parameters:
     -----------
     r     : spherical radius [kpc]
-    rho_0 : central density [Msun/kpc^3]
-    a     : scale radius [kpc]
+    rho0  : central density [Msun/kpc^3]
+    rs    : scale radius [kpc]
     """
-    return two_power_model(r, rho_0, a, 1, 4)
+    return two_power_model(r, rho0, rs, 1, 4)
 
 
-def nfw_density(r, rho_0, r_s):
+def nfw_density(r, rho0, rs):
     """
     NFW profile for Dark Matter halo
 
     Parameters:
     ----------
     r     : spherical radius [kpc]
-    rho_0 : central density [Msun/kpc^3]
-    r_s   : scale radius [kpc]
+    rho0  : central density [Msun/kpc^3]
+    rs    : scale radius [kpc]
     """
-    return two_power_model(r, rho_0, r_s, 1, 3)
+    return two_power_model(r, rho0, rs, 1, 3)
 
 
-def disk_density(R, z, rho_0, R_d, z_0):
+def disk_density(R, z, rho0, Rd, z0):
     """
     Exponential disk density with sech^2 vertical profile.
     Numerically stable version.
@@ -574,11 +465,11 @@ def disk_density(R, z, rho_0, R_d, z_0):
         Cylindrical radius
     z : float or array
         Height above disk plane
-    rho_0 : float
+    rho0 : float
         Central density
-    R_d : float
+    Rd : float
         Radial scale length
-    z_0 : float
+    z0 : float
         Vertical scale height
 
     Returns:
@@ -586,7 +477,7 @@ def disk_density(R, z, rho_0, R_d, z_0):
     rho : float or array
         Density at (R, z)
     """
-    z_scaled = np.abs(z) / (2 * z_0)
+    z_scaled = np.abs(z) / z0
 
     # Use numerically stable form for sech^2
     # For large |z_scaled|, cosh^-2 ≈ 4*exp(-2*|z_scaled|)
@@ -601,7 +492,7 @@ def disk_density(R, z, rho_0, R_d, z_0):
             result = 1.0 / np.cosh(z_scaled) ** 2
         else:
             result = 4 * np.exp(-2 * z_scaled)
-        return rho_0 * np.exp(-R / R_d) * result
+        return rho0 * np.exp(-R / Rd) * result
 
     # Handle array case (for fitting)
     result = np.zeros_like(z_scaled, dtype=float)
@@ -616,7 +507,7 @@ def disk_density(R, z, rho_0, R_d, z_0):
     if np.any(large_mask):
         result[large_mask] = 4 * np.exp(-2 * z_scaled[large_mask])
 
-    return rho_0 * np.exp(-R / R_d) * result
+    return rho0 * np.exp(-R / Rd) * result
 
 
 def two_power_model(r, rho0, rs, alpha, beta):
@@ -655,7 +546,7 @@ def cored_power_model(r, rho0, rs, rc, alpha, beta):
         r (array): Spherical radius [kpc]
         rho0 (float): Central density [Msun/kpc**3]
         rs (float): Scale radius [kpc]
-        rc (float): Core radius [kpc]
+        rc (float): Core term (dimensionless; adds to r/rs)
         alpha (float): Inner slope power
         beta (float): Outer slope power
 
@@ -698,20 +589,20 @@ def three_power_model(r, rho0, rs, alpha, beta, gamma):
     )
 
 
-def double_exponential_disk(R, Sigma_1, R_d1, Sigma_2, R_d2):
+def double_exponential_disk(R, rho01, Rd1, rho02, Rd2):
     """Double exponential radial disk profile (sum of two exponentials)."""
     R = np.asarray(R, dtype=float)
     # Clamp tiny scale lengths to avoid overflow
-    R_d1 = np.maximum(R_d1, 1e-3)
-    R_d2 = np.maximum(R_d2, 1e-3)
-    rho = Sigma_1 * np.exp(-R / R_d1) + Sigma_2 * np.exp(-R / R_d2)
+    Rd1 = np.maximum(Rd1, 1e-3)
+    Rd2 = np.maximum(Rd2, 1e-3)
+    rho = rho01 * np.exp(-R / Rd1) + rho02 * np.exp(-R / Rd2)
     # Ensure strictly positive
     rho = np.clip(rho, 1e-300, np.inf)
     return rho
 
 
 def sech_squared(z, const, z0):
-    """Numerically stable sech^2(z/(2z0)) profile."""
+    """Numerically stable const * sech^2(z/z0) profile."""
     z = np.asarray(z, dtype=float)
     z0 = np.maximum(z0, 1e-3)  # prevent divide-by-zero
     z_scaled = np.abs(z) / z0
@@ -742,9 +633,9 @@ def sech_squared(z, const, z0):
     return result
 
 
-def double_exp_model(R, z, sig1, sig2, Rd1, Rd2, z0):
+def double_exp_model(R, z, rho01, rho02, Rd1, Rd2, z0):
     """Full 3D disk model."""
-    rho_R = double_exponential_disk(R, sig1, Rd1, sig2, Rd2)
+    rho_R = double_exponential_disk(R, rho01, Rd1, rho02, Rd2)
     sech2 = sech_squared(z, 1.0, z0)
     model = rho_R * sech2
 
@@ -759,12 +650,12 @@ def double_exp_model(R, z, sig1, sig2, Rd1, Rd2, z0):
         return model
 
 
-def exp_cutoff(r, rho0, r_core, r_cutoff, alpha):
-    return rho0 * (r_core + r) ** -alpha * np.exp(-r / r_cutoff)
+def exp_cutoff(r, rho0, rcore, rcutoff, alpha):
+    return rho0 * (rcore + r) ** -alpha * np.exp(-r / rcutoff)
 
 
-def only_core(r, rho0, rs, r_core, alpha):
-    return rho0 * (r_core + r / rs) ** -alpha
+def only_core(r, rho0, rs, rc, alpha):
+    return rho0 * (rc + r / rs) ** -alpha
 
 
 def sech_squared_evolving_z0(R, z, const, A, B):
@@ -773,8 +664,8 @@ def sech_squared_evolving_z0(R, z, const, A, B):
     return sech_squared(z, const, z0)
 
 
-def double_disk_flaring(R, z, rho0_in, rho0_out, Rd_in, Rd_out, A, B):
-    rho_R = double_exponential_disk(R, rho0_in, Rd_in, rho0_out, Rd_out)
+def double_disk_flaring(R, z, rho01, rho02, Rd1, Rd2, A, B):
+    rho_R = double_exponential_disk(R, rho01, Rd1, rho02, Rd2)
     rho_z = sech_squared_evolving_z0(R, z, 1.0, A, B)
     model = rho_R * rho_z
 
@@ -788,8 +679,8 @@ def double_disk_flaring(R, z, rho0_in, rho0_out, Rd_in, Rd_out, A, B):
     return model
 
 
-def single_disk_flaring(R, z, rho0, Rd, A, B):
-    rho_R = rho0 * np.exp(-R / Rd)
+def single_disk_flaring(R, z, rho01, Rd1, A, B):
+    rho_R = rho01 * np.exp(-R / Rd1)
     rho_z = sech_squared_evolving_z0(R, z, 1.0, A, B)
     model = rho_R * rho_z
 

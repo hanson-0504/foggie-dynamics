@@ -14,11 +14,11 @@ def test_find_virial_radius():
     bbox = np.array([[-250, 250], [-250, 250], [-250, 250]])
 
     # Generate NFW halo centered at origin
-    # rho(r) = rho_0 / ((r/r_s) * (1 + r/r_s)^2)
-    r_s = 50.0  # scale radius in kpc
+    # rho(r) = rho0 / ((r/rs) * (1 + r/rs)^2)
+    rs = 50.0  # scale radius in kpc
     M200 = 1e12  # solar masses
 
-    def sample_nfw_particles(n, r_s, r_max=250):
+    def sample_nfw_particles(n, rs, r_max=250):
         """Sample particle positions from NFW profile using rejection sampling."""
         positions = []
         while len(positions) < n:
@@ -28,7 +28,7 @@ def test_find_virial_radius():
             phi = np.random.uniform(0, 2 * np.pi, size=2 * n)
 
             # NFW probability (normalized)
-            c = r / r_s
+            c = r / rs
             prob = 1.0 / (c * (1 + c)**2)
             prob /= prob.max()
 
@@ -48,7 +48,7 @@ def test_find_virial_radius():
         return np.array(positions[:n])
 
     # Generate DM particle positions and masses
-    dm_positions = sample_nfw_particles(n_particles, r_s)
+    dm_positions = sample_nfw_particles(n_particles, rs)
     dm_masses = np.ones(n_particles) * (M200 / n_particles)
 
     # Create empty gas and star arrays (function expects all three components)

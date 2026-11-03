@@ -434,12 +434,12 @@ def _data_range(cfg, geometry, metadata, name, logger):
 
     data_range = {0: _resolve_range(cfg[key], units, R200_kpc, redshift, scaling)}
     if geometry == "cylindrical":
-        z_max = cfg["z_max"]
+        z_min, z_max = cfg.get("z_min", 0.0), cfg["z_max"]
         if units == "r200":
-            z_max = max(0.3, z_max * R200_kpc)
+            z_min, z_max = z_min * R200_kpc, max(0.3, z_max * R200_kpc)
         elif scaling.get("mode", "none") != "none":
-            z_max = max(0.3, z_max / (1 + redshift))
-        data_range[1] = (0.3, z_max)
+            z_min, z_max = z_min / (1 + redshift), max(0.3, z_max / (1 + redshift))
+        data_range[1] = (z_min, z_max)
     logger.info(f"{name} fitting range (kpc): {data_range}")
     return data_range
 

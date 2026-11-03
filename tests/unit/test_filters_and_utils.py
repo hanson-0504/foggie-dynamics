@@ -71,7 +71,7 @@ def test_save_evolution_data_handles_both_types(tmp_path, monkeypatch, comp_obj_
     }
 
     # Create a minimal best_summary
-    best_summary = {"rho_0": 1.23, "r_s": 2.0}
+    best_summary = {"rho0": 1.23, "rs": 2.0}
 
     if comp_obj_type == "dict":
         subcomp = {"best_model": "testmodel", "best_summary": best_summary}
@@ -109,6 +109,6 @@ def test_save_evolution_data_handles_both_types(tmp_path, monkeypatch, comp_obj_
         # navigate to snapshot group and bulge
         grp = f["star"]["snapshot_0000"]["bulge"]
         assert grp.attrs["best_model"] == "testmodel"
-        # rho_0 saved as attr
-        assert float(grp.attrs["rho_0"]) == pytest.approx(1.23)
-        assert float(grp.attrs["r_s"]) == pytest.approx(2.0)
+        # rho0 saved as attr
+        assert float(grp.attrs["rho0"]) == pytest.approx(1.23)
+        assert float(grp.attrs["rs"]) == pytest.approx(2.0)

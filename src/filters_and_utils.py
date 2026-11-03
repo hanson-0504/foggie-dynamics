@@ -264,6 +264,14 @@ def create_profiles(
     else:
         raise ValueError(f"Unknown component: {comp}")
 
+    # 0 -> min_radius catch-all bin, then 63 log bins min_radius -> radius,
+    # so mass at small R / |z| (disk midplane, rotation axis) isn't dropped
+    r_lo, r_hi = min_radius.to("kpc").d, radius.to("kpc").d
+    edges = sphere.ds.arr(
+        np.concatenate([[0.0], np.logspace(np.log10(r_lo), np.log10(r_hi), 64)]),
+        "kpc",
+    )
+
     try:
         logger.info(f"--- Creating {comp} profile ---")
         profile: ProfileND = yt.create_profile(
@@ -278,6 +286,7 @@ def create_profiles(
                 z_field: (min_radius.to("kpc"), radius.to("kpc")),
             },
             logs={x_field: True, y_field: True, z_field: True},
+            override_bins={x_field: edges, y_field: edges, z_field: edges},
         )
         logger.info(f"{comp} profile created successfully")
         logger.debug(f"  r range: {profile.x.min()} to {profile.x.max()}")
@@ -419,8 +428,8 @@ def extract_density(
         dz = np.diff(z_bins)
 
         mass = np.sum(mass_3d, axis=0)  # Sum over r axis to get (R, z)
-        volume = 2 * np.pi * R_centers[:, None] * (dR[:, None] * dz[None, :])
-
+        # |z| bins hold mass from both +z and -z, so count the volume on both sides
+        volume = 2 * (2 * np.pi * R_centers[:, None] * (dR[:, None] * dz[None, :]))
         rho = mass / volume
 
         result = {

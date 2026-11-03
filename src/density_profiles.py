@@ -359,7 +359,7 @@ def integrate_spherical_mass(density_func, r_max, *params):
     return mass, error
 
 
-def integrate_disk_mass(R_max, z_max, rho_0, R_d, z_0):
+def integrate_disk_mass(R_max, z_max, rho0, Rd, z0):
     """
     Integrate mass for an exponential disk
 
@@ -371,7 +371,7 @@ def integrate_disk_mass(R_max, z_max, rho_0, R_d, z_0):
         Maximum cylindrical radius [kpc]
     z_max : float
         Maximum height (integrates from -z_max to +z_max) [kpc]
-    rho_0, R_d, z_0 : float
+    rho0, Rd, z0 : float
         Disk parameters
 
     Returns:
@@ -386,34 +386,34 @@ def integrate_disk_mass(R_max, z_max, rho_0, R_d, z_0):
     from .models import disk_density
 
     def integrand(z, R):
-        return 2 * np.pi * R * disk_density(R, z, rho_0, R_d, z_0)
+        return 2 * np.pi * R * disk_density(R, z, rho0, Rd, z0)
 
     mass, error = dblquad(integrand, 0, R_max, -z_max, z_max, epsabs=1e-3, epsrel=1e-3)
     return mass, error
 
 
-def integrate_flaring_double_disk_mass(R_max, z_max, rho_01, rho_02, R_d1, R_d2, A, B):
-    """Integrate flaring disk where z_0(R) = A*R + B"""
+def integrate_flaring_double_disk_mass(R_max, z_max, rho01, rho02, Rd1, Rd2, A, B):
+    """Integrate flaring disk where z0(R) = A*R + B"""
     from scipy.integrate import dblquad
 
     from .models import double_disk_flaring
 
     def integrand(z, R):
-        rho = double_disk_flaring(R, z, rho_01, rho_02, R_d1, R_d2, A, B)
+        rho = double_disk_flaring(R, z, rho01, rho02, Rd1, Rd2, A, B)
         return 2 * np.pi * R * rho
 
     mass, error = dblquad(integrand, 0, R_max, -z_max, z_max)
     return mass, error
 
 
-def integrate_flaring_single_disk_mass(R_max, z_max, rho0, Rd, A, B):
-    """Integrate flaring disk where z_0(R) = A*R + B"""
+def integrate_flaring_single_disk_mass(R_max, z_max, rho01, Rd1, A, B):
+    """Integrate flaring disk where z0(R) = A*R + B"""
     from scipy.integrate import dblquad
 
     from .models import single_disk_flaring
 
     def integrand(z, R):
-        rho = single_disk_flaring(R, z, rho0, Rd, A, B)
+        rho = single_disk_flaring(R, z, rho01, Rd1, A, B)
         return 2 * np.pi * R * rho
 
     mass, error = dblquad(integrand, 0, R_max, -z_max, z_max)
