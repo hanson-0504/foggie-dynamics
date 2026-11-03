@@ -1,6 +1,6 @@
 text.usetex        : True
 text.latex.preamble: \usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}
 font.family        : serif
-font.serif         : Computer Modern
+font.serif         : Latin Modern Roman, CMU Serif, Computer Modern Roman, DejaVu Serif
 savefig.bbox       : tight
 savefig.format     : pdf

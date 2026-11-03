@@ -289,6 +289,9 @@ def setup_logging(component, halo_id=None):
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
     logging.getLogger('matplotlib.ticker').setLevel(logging.WARNING)
+    # Suppress PIL PNG chunk and h5py type-converter debug output
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('h5py').setLevel(logging.WARNING)
 
     return logging.getLogger(__name__)
 
