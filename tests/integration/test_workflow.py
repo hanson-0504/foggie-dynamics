@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pytest
 
-from src.workflow import DensityProfile, fit_stellar_components
+from src.workflow import DensityProfile, fit_components
 
 
 @pytest.fixture
@@ -74,7 +74,8 @@ def test_fit_stellar_bulge_workflow(mock_density_profile, mock_config):
     """Test full stellar fitting workflow."""
     logger = logging.getLogger('test')
 
-    results = fit_stellar_components(
+    results = fit_components(
+        component="star",
         profile=mock_density_profile,
         config=mock_config,
         logger=logger,
