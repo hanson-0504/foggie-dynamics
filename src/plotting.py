@@ -1669,78 +1669,54 @@ def plot_fitted_mass_evolution(
         raw_comps = [comp]
 
     mass_data = {c: results[c]['mass_evolution'] for c in raw_comps}
-    radii_to_extract = [5, 10, 15, 20, 30, 50, 75, 100, 150, 200]  # kpc
-    masses: dict[int, np.ndarray] = {}
-    masses_hi: dict[int, np.ndarray] = {}
-    masses_lo: dict[int, np.ndarray] = {}
-
-    # Get snapshot keys present in all required components
+    # One curve per snapshot at its own saved radii (they stop at that snapshot's
+    # R200, so nothing is extrapolated). Components share radii within a snapshot;
+    # anything outside a component's range is NaN rather than clamped
     snapshot_keys = sorted(
-        set.intersection(*(set(k for k in mass_data[c] if k.startswith("snapshot_")) for c in raw_comps))
-    )
+        set.intersection(*(
+            set(k for k in mass_data[c] if k.startswith("snapshot_"))
+            for c in raw_comps
+    )))
+    curves = {} # snapshot index -> (r, M, M_lo, M_hi)
     for snapshot in snapshot_keys:
         i = int(snapshot.split("_")[1])
-
-        # Interpolate and sum masses for all required components
-        total = np.zeros(len(radii_to_extract))
-        total_lo_sq = np.zeros(len(radii_to_extract))
-        total_hi_sq = np.zeros(len(radii_to_extract))
-
+        r = np.asarray(mass_data[raw_comps[0]][snapshot]["radii"], dtype=float)
+        M, lo2, hi2 = np.zeros_like(r), np.zeros_like(r), np.zeros_like(r)
         for c in raw_comps:
-            r_arr = np.array(mass_data[c][snapshot]['radii'])
-            m_arr = np.array(mass_data[c][snapshot]['total'])
-            total += np.interp(radii_to_extract, r_arr, m_arr)
+            s = mass_data[c][snapshot]
+            r_c = np.asarray(s['radii'], dtype=float)
+            on_r = lambda y: np.interp(r, r_c, np.asarray(y, dtype=float), left=np.nan, right=np.nan)
+            M += on_r(s['total'])
+            if show_uncertainties and "total_lo" in s:
+                lo2 += on_r(s["total_lo"]) ** 2
+                hi2 += on_r(s["total_hi"]) ** 2
+        curves[i] = (r, M, np.sqrt(lo2), np.sqrt(hi2))
 
-            # Interpolate uncertainties if available
-            if show_uncertainties and 'total_lo' in mass_data[c][snapshot]:
-                lo_arr = np.array(mass_data[c][snapshot]['total_lo'])
-                hi_arr = np.array(mass_data[c][snapshot]['total_hi'])
-                total_lo_sq += np.interp(radii_to_extract, r_arr, lo_arr)**2
-                total_hi_sq += np.interp(radii_to_extract, r_arr, hi_arr)**2
-
-        masses[i] = total
-        if show_uncertainties:
-            masses_lo[i] = np.sqrt(total_lo_sq) if np.any(total_lo_sq > 0) else np.zeros_like(total)
-            masses_hi[i] = np.sqrt(total_hi_sq) if np.any(total_hi_sq > 0) else np.zeros_like(total)
-
-    # Filter to valid snapshots only (skip index 0 if present)
-    valid_snapshots = sorted(i for i in masses if i > 0)
+    # Skip snapshots with no usable masses (e.g. failed fits or bad R200)
+    bad = sorted(i for i, (_, M, _, _) in curves.items() if not np.any(np.isfinite(M) & (M > 0)))
+    if bad:
+        print(f"Skipping snapshots with no positive masses: {bad}")
+    valid_snapshots = sorted(i for i in curves if i not in bad)
     if not valid_snapshots:
         return
-    mass_array = np.array([masses[i] for i in valid_snapshots]).T
-    mass_lo_array = None
-    mass_hi_array = None
-
-    if show_uncertainties and masses_lo:
-        mass_lo_array = np.array([masses_lo.get(i, np.zeros_like(masses[i])) for i in valid_snapshots]).T
-        mass_hi_array = np.array([masses_hi.get(i, np.zeros_like(masses[i])) for i in valid_snapshots]).T
-    redshifts_plot = np.array([redshifts[i] for i in valid_snapshots])
-
-    redshifts_plot = np.log(1 + redshifts_plot)
+    redshifts_plot = np.log(1 + np.array([redshifts[i] for i in valid_snapshots]))
 
     # Plot
     fig, ax = plt.subplots(figsize=plt_cfg.get('figsize', [10, 6]))
-
     norm = mcolors.Normalize(vmin=redshifts_plot.min(), vmax=redshifts_plot.max())
-    cmap = cm.get_cmap(plt_cfg.get('cmap', 'turbo_r'))
+    cmap = plt.get_cmap(plt_cfg.get('cmap', 'turbo_r'))
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     ax.set_yscale('log')
 
-    for j, z in enumerate(redshifts_plot):
+    for i, z in zip(valid_snapshots, redshifts_plot):
+        r, M, M_lo, M_hi = curves[i]
         color = cmap(norm(z))
-
-        # Plot error band
-        if mass_lo_array is not None and mass_hi_array is not None and np.any(mass_lo_array[:, j] > 0):
-            y_lo = (mass_array[:, j] - mass_lo_array[:, j]).astype(float)
-            y_hi = (mass_array[:, j] + mass_hi_array[:, j]).astype(float)
-            ax.fill_between(radii_to_extract, y_lo, y_hi, color=color, alpha=0.2)
-
-        # Plot line
-        ax.plot(
-            radii_to_extract, mass_array[:, j], '-o',
-            color=color,
-            markersize=plt_cfg.get('markersize', 4)
-        )
+        if np.any(M_lo > 0):
+            ax.fill_between(
+                r, np.clip(M - M_lo, 1e-10 * np.nanmax(M), None),
+                M + M_hi, color=color, alpha=0.2
+            )
+        ax.plot(r, M, '-o', color=color, markersize=plt_cfg.get('markersize', 4))
 
     cbar = fig.colorbar(sm, ax=ax)
     cbar.set_label(r"$\ln(1+z)$")

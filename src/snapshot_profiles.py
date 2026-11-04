@@ -390,18 +390,18 @@ def compute_r200(ds, center, halo_id, redshift, sim_type, paths, logger):
     except Exception as e:
         logger.warning(f"Direct R200 calculation failed: {e}", exc_info=True)
 
-    # 2. From the matching full-physics run (non-full sims only)
-    if sim_type != 'full':
-        full_meta_path = paths.snapshot_data(halo_id, redshift) / "metadata.h5"
-        if full_meta_path.exists():
-            R200 = load_hdf5(full_meta_path).get("R200_kpc")
-            source = "full-physics metadata"
-        else:
-            R200 = interpolate_r200_from_metadata(paths.data / halo_id, redshift)
-            source = "interpolated full-physics metadata"
-        if R200 is not None:
-            logger.info(f"R200 = {R200:.2f} kpc from {source}")
-            return R200
+    # 2. From the matching full-physics run (non-full sims only),
+    #    else interpreted from this halo's other snapshots
+    full_meta_path = paths.snapshot_data(halo_id, redshift) / "metadata.h5"
+    if sim_type != 'full' and full_meta_path.exists():
+        R200 = load_hdf5(full_meta_path).get("R200_kpc")
+        source = "full-physics metadata"
+    else:
+        R200 = interpolate_r200_from_metadata(paths.data / halo_id, redshift)
+        source = "interpolated full-physics metadata"
+    if R200 is not None:
+        logger.info(f"R200 = {R200:.2f} kpc from {source}")
+        return R200
 
     # 3. Last resort
     # TODO (C3): the run continues as normal with this value; consider raising

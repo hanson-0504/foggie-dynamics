@@ -96,10 +96,10 @@ def find_virial_radius(
     density_min = (M_min / volume_min).to("Msun/kpc**3")
 
     if density_min < target_density:
-        logger.warning(f"Density at R_min={R_min} kpc ({density_min:.2e}) is below target ({target_density:.2e})")
-        logger.warning(f"This halo may not have a well-defined R200 virial radius")
-        logger.warning(f"Returning R_min={R_min} kpc as lower bound estimate")
-        return R_min
+        raise ValueError(
+            f"Mean density within R_min={R_min:.3f} kpc ({density_min:.2e}) is already "
+            f"below 200*rho_crit ({target_density:.2e}); R200 is not in the search range"
+        )
 
     # Check density at R_max to set appropriate upper bound
     sphere = ds.sphere(center, (R_max, "kpc"))
@@ -113,9 +113,17 @@ def find_virial_radius(
     density_max = (M_tot / volume).to("Msun/kpc**3")
 
     if density_max > target_density:
-        logger.warning(f"Density at R={R_max} kpc still above target")
-        logger.info(f"Increasing R_max to find virial radius")
+        logger.warning(f"Density at R={R_max} kpc still above target; retrying with R_max=1000 kpc")
         R_max = 1000.0
+        sphere = ds.sphere(center, (R_max, "kpc"))
+        M_tot = sphere[("dm", "particle_mass")].sum()
+        if sim_type != "dmo":
+            M_tot += sphere[("gas", "cell_mass")].sum()
+        if sim_type == "full":
+            M_tot += sphere[("star", "particle_mass")].sum()
+        density_max = (M_tot / ((4.0/3.0) * np.pi * (R_max * yt.units.kpc) ** 3)).to("Msun/kpc**3")
+        if density_max > target_density:
+            raise ValueError(f"Mean density within 1000 kpc ({density_max:.2e}) is still above 200*rho_crit")
 
     # Initialize variables for the loop
     density = None
@@ -154,25 +162,24 @@ def find_virial_radius(
 
         # Check if bounds have collapsed without meeting density criterion
         if abs(R_max - R_min) < 0.01:
-            if abs(ratio - 1.0) < tol:
-                logger.info(f"Converged within tolerance despite bound collapse")
-            else:
-                logger.warning(f"Bisection bounds collapsed without meeting density criterion")
-                logger.warning(f"Final density: {density:.2e}, Target: {target_density:.2e}, Ratio: {ratio:.3f}")
-                logger.warning(f"This halo likely does not have a well-defined R200 at this redshift")
-                logger.info(f"Returning R={R:.1f} kpc as best estimate")
+            if abs(ratio - 1.0) > 0.05:
+                raise ValueError(
+                    f"Bisection bounds collapsed at R={R:.2f} kpc with density ratio "
+                    f"{ratio:.3f}; no well-defined R200."
+                )
+            logger.info(f"Bounds collapsed at R={R:.2f} kpc (ratio {ratio:.4f}); accepting")
             return R
         # Otherwise, continue bisection loop
 
     # If we exit the loop, check if density criterion was met
-    logger.warning(f"Did not converge after {max_iter} iterations")
     final_ratio = (density / target_density).value
-    logger.warning(f"Final density ratio: {final_ratio:.3f} (target is 1.0)")
-    if abs(final_ratio - 1.0) > 0.5:  # More than 50% off
-        logger.warning(f"Density criterion poorly satisfied - R200 may be unreliable")
-    logger.info(f"R200 ~ {R:.1f} kpc (best estimate)")
-    logger.info(f"M200 ~ {M_tot.to('Msun'):.2e}")
-    logger.info(f"Density at R200: {density:.2e} (target: {target_density:.2e})")
+    if abs(final_ratio - 1.0) > 0.05:
+        raise ValueError(
+            f"Did not converge after {max_iter} iterations "
+            f"(R={R:.2f} kpc, density ratio {final_ratio:.3f})"
+        )
+    logger.warning(f"Did not converge after {max_iter} iterations; "
+                   f"accepting R={R:.2f} kpc (ratio {final_ratio:.4f})")
     return R
 
 

@@ -1411,7 +1411,9 @@ def save_evolution_data(
                 snap_idx = start_idx + i
                 snap_grp = mass_grp.require_group(f"snapshot_{snap_idx:04d}")
 
-                for key in ("radii", "bulge", "disk", "halo", "total"):
+                for key in ("radii", "bulge", "disk", "halo", "total",
+                            "bulge_lo", "bulge_hi", "disk_lo", "disk_hi",
+                            "halo_lo", "halo_hi", "total_lo", "total_hi"):
                     if key in snap_grp:
                         del snap_grp[key]
                     snap_grp.create_dataset(

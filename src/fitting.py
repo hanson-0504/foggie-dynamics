@@ -36,7 +36,7 @@ def fit_general_emcee(
     soft_priors: Optional[Callable] = None,
     nwalkers: int = 64,
     nsteps: int = 4000,
-    nburn: int = 1000,
+    nburn: int | str = "auto",
     thin: int | str = "auto",
     verbose: bool = True,
     uncertainties: Optional[np.ndarray] = None,
@@ -79,8 +79,10 @@ def fit_general_emcee(
         Number of MCMC walkers. Default: 64.
     nsteps : int, optional
         Total MCMC steps. Default: 4000.
-    nburn : int, optional
-        Burn-in steps to discard. Default: 1000.
+    nburn : int or 'auto', optional
+        Burn-in steps to discard. If 'auto' or None, 5 * tau_max from the
+        autocorrelation time, capped at nsteps // 2 (nsteps // 4 if tau
+        can't be estimated). Default: 'auto'.
     thin : int or 'auto', optional
         Thinning factor for samples. If 'auto' or None, automatically
         determined from autocorrelation time (~0.5 * tau_max).
@@ -369,25 +371,39 @@ def fit_general_emcee(
     # -------------------------------------------------
     # Diagnostics
     # -------------------------------------------------
+    # Autocorrelation time, needed for burn-in and thinning. quiet=True still
+    # returns an estimate when the chain is shorter than 50*tau (emcee warns)
+    tau = None
     tau_max = None
     n_eff = None
+    try:
+        tau = sampler.get_autocorr_time(quiet=True)
+        if np.all(np.isfinite(tau)):
+            tau_max = float(np.max(tau))
+    except emcee.autocorr.AutocorrError as e:
+        logger.warning(f"Could not estimate autocorrelation time: {e}")
+
+    # Burn-in: discard ~5 autocorrelation times, at most half the chain
+    if nburn is None or nburn == "auto":
+        if tau_max is not None:
+            nburn = min(int(np.ceil(5 * tau_max)), nsteps // 2)
+        else:
+            nburn = nsteps // 4
+        if verbose:
+            logger.info(
+                f"Auto burn-in: discarding {nburn}/{nsteps} steps"
+                + (f" (5 x tau_max={tau_max:.1f})" if tau_max is not None else " (tau unavailable)")
+            )
+
     if verbose:
-        try:
-            tau = sampler.get_autocorr_time()
-            tau_max = np.max(tau)
+        if tau_max is not None:
             logger.info(f"Autocorrelation time: {tau}")
-            # effective sample size n_eff
-            n_eff = sampler.get_chain(flat=True).shape[0] / tau
+            # effective sample size n_eff (post burn-in)
+            n_eff = nwalkers * (nsteps - nburn) / tau
             if nsteps < 50 * tau_max:
                 logger.warning(
                     f"Chain may not be converged. Need ~{50 * tau_max:.0f} steps"
                 )
-        except emcee.autocorr.AutocorrError as e:
-            logger.warning(
-                f"Chain too short to estimate autocorrelation time: {e}", exc_info=True
-            )
-            tau_max = None
-            n_eff = None
 
         acceptance = np.mean(sampler.acceptance_fraction)
         logger.info(f"Mean acceptance fraction: {acceptance:.3f}")
