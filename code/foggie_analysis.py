@@ -85,7 +85,7 @@ Examples:
     parser.add_argument(
         "--raw_data_root",
         type=Path,
-        default=Path("/cephfs/brs/FOGGIE"),
+        default=Path("/cephfs2/brs/FOGGIE"),
         help="Root directory of raw FOGGIE simulation outputs (read-only)",
     )
     parser.add_argument(

@@ -164,23 +164,25 @@ star:
       units: "r200"
     bounds:
       log10_rho0: [5.0, 12.0]
-      log10_rs: [-1.0, 0.3]
+      log10_rs: [-1.0, 0.6]
       log10_rc: [-1.0, 0.0]
-      alpha: [0.0, 6.0]
-      beta: [3.0, 7.0]
-      gamma: [0.1, 3.0]
+      alpha: [0.0, 4.0]
+      beta: [4.0, 7.0]
+      gamma: [1.0, 3.0]
       log_sigma: [-6, 2]
       rcore: [0.1, 1.5]
       rcutoff: [0.5, 2.0]
+      q: [0.2, 1.0]
     p0:
       log10_rho0: 9.0
       log10_rs: 0.0
       alpha: 1.0
-      beta: 4.0
-      gamma: 1.0
+      beta: 4.5
+      gamma: 1.5
       log10_rc: -0.3
       rcore: 0.3
       rcutoff: 1.0
+      q: 0.8
     models:
       - Hernquist
       - Two-Power
@@ -280,7 +282,7 @@ star:
     range_scaling:
       units: "r200"
     bounds:
-      log10_rho0: [0.0, 10.0]
+      log10_rho0: [4.0, 10.0]
       log10_rs: [0.0, 2.5]
       alpha: [0.0, 5.0]
       beta: [1.0, 7.0]
@@ -300,6 +302,15 @@ star:
       type: #inverse_radius
       power: 1.0
       r_scale: 50
+
+  joint:
+    enabled: true
+    models: null # null = use each subcomponent's best independent model
+    R_range: [0.6, 40]
+    z_max: 5.0
+    z_min: 0.0
+    nsteps: 60000
+    flatten: [bulge]
 
 # =============================================================================
 # GAS COMPONENT - R200 scaled ranges
@@ -370,6 +381,10 @@ gas:
       type: #inverse_radius
       power: 1.0
       r_scale: 70
+
+  joint:
+    enabled: true
+    nsteps: 60000
 
 # =============================================================================
 # DARK MATTER COMPONENT - R200 scaled ranges

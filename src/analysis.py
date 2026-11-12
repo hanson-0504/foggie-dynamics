@@ -53,9 +53,15 @@ def spherical_average(data_2d, r_2d, r_bins, weights=None):
     return averaged
 
 
-def spherically_average_model(model_evaluator, r_array, model_summary, n_theta=50):
+def spherically_average_model(model_evaluator, r_array, model_summary,
+                              n_theta=101, u_min=1e-5):
     """
     Convert cylindrical model rho(R, z) to spherical rho(r) by direct sampling.
+
+    Averages over the sphere using u = cos(theta), where the solid-angle
+    weight is uniform: <rho>(r) = int_0^1 rho(r sqrt(1-u^2), r u) du
+    (assumes rho is symmetric in z). Samples are spaced geometrically in u
+    so thin disks (angular width ~ h/r) are resolved down to h/r ~ u_min.
 
     Parameters
     ----------
@@ -67,27 +73,25 @@ def spherically_average_model(model_evaluator, r_array, model_summary, n_theta=5
         Model parameters
     n_theta : int
         Number of polar angle samples per radius
+    u_min : float
+        Smallest non-zero |cos(theta)| sampled; sets the thinnest resolvable h/r
 
     Returns
     -------
     rho_spherical: array
         Spherically-averaged density at each r
     """
-    rho_spherical = np.zeros_like(r_array)
-
+    u = np.concatenate([[0.0], np.geomspace(u_min, 1.0, n_theta - 1)])
+    sin_t = np.sqrt(1.0 - u**2)
+    
+    rho_spherical = np.full(len(r_array), np.nan)
     for i, r in enumerate(r_array):
-        theta = np.linspace(0, np.pi, n_theta)
-        R_samples = r * np.sin(theta)
-        z_samples = r * np.cos(theta)
+        rho = np.asarray(model_evaluator((r * sin_t, r * u), model_summary), dtype=float)
+        ok = np.isfinite(rho)
+        if ok.sum() >= 2:
+            # normalise by the covered u-range in case some samples were invalid
+            rho_spherical[i] = np.trapezoid(rho[ok], u[ok]) / (u[ok][-1] - u[ok][0])
 
-        rho_samples = model_evaluator((R_samples, z_samples), model_summary)
-        weights = np.sin(theta)
-
-        valid_mask = np.isfinite(rho_samples)
-        if np.any(valid_mask):
-            rho_spherical[i] = np.average(
-                rho_samples[valid_mask], weights=weights[valid_mask]
-            )
     return rho_spherical
 
 
@@ -826,7 +830,8 @@ def calc_masses_with_uncertainties(
         mass_integrator = ModelRegistry.get_mass_integrator(best_model)
         flat_samples = summary['samples']
         # Sample columns = the registry's sampled names, then log_sigma
-        param_names = ModelRegistry.get_param_names(best_model) + ["log_sigma"]
+        param_names = ModelRegistry.get_param_names(best_model)
+        q_col = len(param_names) if (component != "disk" and "q" in summary) else None
         # subsample
         indices = np.random.choice(
             len(flat_samples),
@@ -852,13 +857,15 @@ def calc_masses_with_uncertainties(
                 mass_samples = []
                 for idx in indices:
                     # Sampled values; the registry integrator adds the linear ones
-                    sample_dict = {name: flat_samples[idx, i]
-                                   for i, name in enumerate(param_names)}
+                    sample_dict = dict(zip(param_names, flat_samples[idx]))
                     try:
                         if component == "disk":
                             mass_samples.append(mass_integrator(r, 2 * r, sample_dict))
                         else:
-                            mass_samples.append(mass_integrator(r, sample_dict))
+                            m = mass_integrator(r, sample_dict)
+                            if q_col is not None:
+                                m *= flat_samples[idx][q_col]
+                            mass_samples.append(m)
                     except Exception:
                         failed_integrations += 1
 
@@ -1090,7 +1097,7 @@ def calculate_component_statistics(
     for comp_name in ["bulge", "disk", "halo"]:
         if comp_name in results:
             best_model = results[comp_name].best_model
-            table = results[comp_name].model_comparison.get("table", {})
+            table = results[comp_name].model_comparison.get("table") or {}
             if best_model and best_model in table:
                 chi2_values.append(table[best_model]["chi2_reduced"])
 

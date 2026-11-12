@@ -1361,7 +1361,7 @@ def plot_disk_subtraction(r_1d, rho_1d, rho_disk, rho_bulge, save_path=None):
     return fig
 
 
-def plot_corner(model_name, summary, save_path=None, **corner_kwargs):
+def plot_corner(model_name, summary, save_path=None, labels=None, **corner_kwargs):
     """
     Create a corner plot showing MCMC posterior distributions.
 
@@ -1373,6 +1373,10 @@ def plot_corner(model_name, summary, save_path=None, **corner_kwargs):
         Fitting summary containing 'samples' array (shape: n_samples x n_params)
     save_path : str or Path, optional
         If provided, save figure to this path
+    labels : list of str, optional
+        One name per sample column, e.g. JointModel.names[sub] or
+        JointModel.param_names ("bulge.log10_rs" -> "bulge: log10 r_s").
+        If None, names come from ModelRegistry (+ log_sigma).
     **corner_kwargs : dict
         Additional keyword arguments passed to corner.corner()
 
@@ -1399,39 +1403,38 @@ def plot_corner(model_name, summary, save_path=None, **corner_kwargs):
     if len(samples) == 0:
         print(f"Warning: Empty samples array for {model_name}")
         return None
+    
+    if labels is None:
+        param_names = ModelRegistry.get_param_names(model_name)
+        if samples.shape[1] == len(param_names) + 1:
+            labels = param_names + ["log_sigma"]
+        else:
+            # Fallback: use generic labels if dimensions don't match
+            labels = [f"param_{i}" for i in range(samples.shape[1])]
+    elif len(labels) != samples.shape[1]:
+        raise ValueError(f"{len(labels)} labels for {samples.shape[1]} sample columns")
 
-    # Get parameter names from ModelRegistry
-    param_names = ModelRegistry.get_param_names(model_name)
-
-    # MCMC samples include log_sigma as the last parameter
-    # We need to add it to our labels
-    n_params_model = len(param_names)
-    n_params_total = samples.shape[1]
-
-    if n_params_total == n_params_model + 1:
-        labels = param_names + ["log_sigma"]
-    else:
-        # Fallback: use generic labels if dimensions don't match
-        labels = [f"param_{i}" for i in range(n_params_total)]
-
-    # LaTeX labels; names follow the convention <name> / log10_<name>
+    # LaTeX labels; names follow the convention [<sub>.]<name> / [<sub>.]log10_<name>
     latex_names = {
         "rho0": r"\rho_0", "rho01": r"\rho_{01}", "rho02": r"\rho_{02}",
         "rs": "r_s", "rc": "r_c", "Rd1": "R_{d1}", "Rd2": "R_{d2}", "z0": "z_0",
         "rcore": r"r_{\rm core}", "rcutoff": r"r_{\rm cutoff}",
-        "alpha": r"\alpha", "beta": r"\beta", "gamma": r"\gamma",
+        "alpha": r"\alpha", "beta": r"\beta", "gamma": r"\gamma", "q": "q",
     }
     units = {"rs": " [kpc]", "Rd1": " [kpc]", "Rd2": " [kpc]", "z0": " [kpc]",
              "rcore": " [kpc]", "rcutoff": " [kpc]", "B": " [kpc]"}
-    latex_labels = []
-    for label in labels:
-        if label == "log_sigma":
-            latex_labels.append(r"$\ln \sigma$")
-        elif label.startswith("log10_"):
-            name = label[len("log10_"):]
-            latex_labels.append(f"$\\log_{{10}} {latex_names.get(name, name)}$")
-        else:
-            latex_labels.append(f"${latex_names.get(label, label)}${units.get(label, '')}")
+
+    def fmt(label):
+        prefix, _, name = label.rpartition(".")  # "bulge.log10_rs" -> ("bulge", "log10_rs")
+        prefix = f"{prefix}: " if prefix else ""
+        if name == "log_sigma":
+            return r"$\ln \sigma$"
+        if name.startswith("log10_"):
+            core = name[len("log10_"):]
+            return f"{prefix}$\\log_{{10}} {latex_names.get(core, core)}$"
+        return f"{prefix}${latex_names.get(name, name)}${units.get(name, '')}"
+
+    latex_labels = [fmt(l) for l in labels]
 
     # Set default corner plot options
     corner_defaults = {

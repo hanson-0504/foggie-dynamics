@@ -87,6 +87,7 @@ from .snapshot_profiles import (
     snapshot_data_dir,
     write_profiles
 )
+from .joint_fitting import fit_joint
 
 PATHS = ProjectPaths.create()
 DATA_DIR = PATHS.data
@@ -895,6 +896,33 @@ def process_snapshot(
         halo_id=halo_id, n_jobs=n_jobs, save_data=save_data, verbose=verbose,
         metadata=metadata, experiment=experiment
     )
+    if config[component].get("joint", {}).get("enabled") and len(results) > 1:
+        _, sig_2d = _profile_uncertainties(profile, component, logger)
+        joint = fit_joint(component, profile, config, results, logger,
+                          metadata, uncertainties=sig_2d)
+        if joint is None:
+            logger.warning(f"Joint fit failed for {component}; keeping independent fits")
+        else:
+            jm, sub_summaries, full_summary = joint
+            if save_data:
+                results_dir = (PATHS.snapshot_results(halo_id, metadata["redshift"], experiment=experiment)
+                               if metadata and "redshift" in metadata
+                               else PATHS.halo_results(halo_id, experiment=experiment))
+                save_results(results_dir / f"{component}_joint_full_results.h5",
+                             {"Joint": full_summary}, "Joint", logger)
+
+                for sub, summ in sub_summaries.items():
+                    save_results(results_dir / f"{component}_{sub}_joint_results.h5",
+                                 {jm.models[sub]: summ}, jm.models[sub], logger)
+            results = {
+                sub: FittingResult(
+                    best_model=jm.models[sub],
+                    samples=summ["samples"],
+                    summary=summ,
+                    model_comparison=results[sub].model_comparison
+                ) for sub, summ in sub_summaries.items()
+            }
+            logger.info(f"Joint fit complete for {component}: {jm.models}")
 
     # Calculate Masses
     # Build fallback radii: R200-scaled if config says so, else fixed kpc
